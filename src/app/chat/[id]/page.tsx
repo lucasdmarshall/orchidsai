@@ -125,7 +125,7 @@ export default function ChatPage() {
     setStreamingContent("");
 
     try {
-      const response = await fetch("http://72.62.244.137:8000/chat/stream", {
+      const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
