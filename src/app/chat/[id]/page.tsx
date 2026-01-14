@@ -45,6 +45,7 @@ export default function ChatPage() {
   const [isTyping, setIsTyping] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showInfoPanel, setShowInfoPanel] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -93,7 +94,18 @@ export default function ChatPage() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isTyping]);
+  }, [messages, isTyping, streamingContent]);
+
+  const buildPrompt = (userInput: string) => {
+    const charInfo = character ? `You are ${character.name}, ${character.title}. ${character.personality || ""}` : "";
+    const personaInfo = persona ? `The user's name is ${persona.name}. ${persona.personality || ""}` : "";
+    const context = messages
+      .slice(-10)
+      .map((m) => `${m.role === "user" ? "User" : character?.name || "Assistant"}: ${m.content}`)
+      .join("\n");
+    
+    return `${charInfo}\n${personaInfo}\n\nConversation:\n${context}\nUser: ${userInput}\n${character?.name || "Assistant"}:`;
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,30 +118,64 @@ export default function ChatPage() {
       created_at: new Date().toISOString(),
     };
 
+    const prompt = buildPrompt(input);
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsTyping(true);
+    setStreamingContent("");
 
-    setTimeout(() => {
+    try {
+      const response = await fetch("http://72.62.244.137:8000/chat/stream", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: prompt,
+          max_tokens: 256,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("API request failed");
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let fullContent = "";
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value, { stream: true });
+          fullContent += chunk;
+          setStreamingContent(fullContent);
+        }
+      }
+
       const aiMessage: Message = {
         id: Math.random().toString(),
         role: "assistant",
-        content: generateMockResponse(input, character, persona),
+        content: fullContent || "I apologize, I couldn't generate a response.",
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, aiMessage]);
+    } catch (error) {
+      console.error("Chat error:", error);
+      toast.error("Failed to get response. Please try again.");
+      const fallbackMessage: Message = {
+        id: Math.random().toString(),
+        role: "assistant",
+        content: "I'm having trouble connecting right now. Please try again.",
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, fallbackMessage]);
+    } finally {
       setIsTyping(false);
-    }, 1500);
-  };
-
-  const generateMockResponse = (input: string, char: any, user: any) => {
-    const responses = [
-      `${char.name} thinks about what you said: "${input}".`,
-      `As ${char.title}, I find your perspective interesting.`,
-      `Well, ${user?.name || "my friend"}, that's quite a thought.`,
-      `*Adjusts matcha bowl* Indeed. ${char.personality?.split(',')[0] || 'Unique'} traits coming through here.`,
-    ];
-    return responses[Math.floor(Math.random() * responses.length)];
+      setStreamingContent("");
+    }
   };
 
   const startNewChat = () => {
@@ -269,13 +315,28 @@ export default function ChatPage() {
               animate={{ opacity: 1 }}
               className="flex justify-start"
             >
-              <div className="flex gap-3 items-center text-zinc-500 text-xs bg-zinc-900/50 px-4 py-2 rounded-full border border-zinc-800">
-                <div className="flex gap-1">
-                  <span className="w-1 h-1 bg-matcha rounded-full animate-bounce" />
-                  <span className="w-1 h-1 bg-matcha rounded-full animate-bounce [animation-delay:0.2s]" />
-                  <span className="w-1 h-1 bg-matcha rounded-full animate-bounce [animation-delay:0.4s]" />
-                </div>
-                {character.name} is typing...
+              <div className={`flex gap-3 max-w-[85%]`}>
+                <Avatar className="w-8 h-8 flex-shrink-0 border border-white/10">
+                  <AvatarImage src={character.avatar_url} />
+                  <AvatarFallback className="bg-zinc-800">
+                    {character.name[0]}
+                  </AvatarFallback>
+                </Avatar>
+                {streamingContent ? (
+                  <div className="p-4 rounded-[1.5rem] text-sm leading-relaxed bg-zinc-900 border border-zinc-800 rounded-tl-none text-zinc-200">
+                    {streamingContent}
+                    <span className="inline-block w-1 h-4 bg-matcha ml-1 animate-pulse" />
+                  </div>
+                ) : (
+                  <div className="flex gap-3 items-center text-zinc-500 text-xs bg-zinc-900/50 px-4 py-2 rounded-full border border-zinc-800">
+                    <div className="flex gap-1">
+                      <span className="w-1 h-1 bg-matcha rounded-full animate-bounce" />
+                      <span className="w-1 h-1 bg-matcha rounded-full animate-bounce [animation-delay:0.2s]" />
+                      <span className="w-1 h-1 bg-matcha rounded-full animate-bounce [animation-delay:0.4s]" />
+                    </div>
+                    {character.name} is typing...
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
