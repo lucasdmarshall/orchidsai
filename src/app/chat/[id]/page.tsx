@@ -1,15 +1,31 @@
 "use client";
 
-import { useEffect, useState, useRef, use } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Send, ChevronLeft, Info, Sparkles, User } from "lucide-react";
+import { Send, ChevronLeft, MoreVertical, User, RefreshCw, Trash2, Info } from "lucide-react";
 
 interface Message {
   id: string;
@@ -27,6 +43,8 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showInfoPanel, setShowInfoPanel] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,13 +60,22 @@ export default function ChatPage() {
       const { data: personaData } = await supabase
         .from("personas")
         .select("*")
-        .order("created_at", { ascending: false })
+        .eq("is_default", true)
         .limit(1);
 
-      if (charData) setCharacter(charData);
-      if (personaData && personaData.length > 0) setPersona(personaData[0]);
+      if (!personaData || personaData.length === 0) {
+        const { data: anyPersona } = await supabase
+          .from("personas")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (anyPersona && anyPersona.length > 0) setPersona(anyPersona[0]);
+      } else {
+        setPersona(personaData[0]);
+      }
 
-      // Add greeting as first message if no messages exist
+      if (charData) setCharacter(charData);
+
       setMessages([
         {
           id: "greeting",
@@ -83,7 +110,6 @@ export default function ChatPage() {
     setInput("");
     setIsTyping(true);
 
-    // Mock AI Response based on character personality
     setTimeout(() => {
       const aiMessage: Message = {
         id: Math.random().toString(),
@@ -101,21 +127,39 @@ export default function ChatPage() {
       `${char.name} thinks about what you said: "${input}".`,
       `As ${char.title}, I find your perspective interesting.`,
       `Well, ${user?.name || "my friend"}, that's quite a thought.`,
-      `*Adjusts matcha bowl* Indeed. ${char.personality.split(',')[0]} traits coming through here.`,
+      `*Adjusts matcha bowl* Indeed. ${char.personality?.split(',')[0] || 'Unique'} traits coming through here.`,
     ];
     return responses[Math.floor(Math.random() * responses.length)];
   };
 
-  if (loading) return <div className="flex items-center justify-center min-h-screen">
-    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-matcha"></div>
-  </div>;
+  const startNewChat = () => {
+    setMessages([
+      {
+        id: "greeting",
+        role: "assistant",
+        content: character?.greeting || "Hello!",
+        created_at: new Date().toISOString(),
+      },
+    ]);
+    toast.success("Started a new chat!");
+  };
+
+  const deleteChat = () => {
+    setShowDeleteDialog(false);
+    toast.success("Chat deleted!");
+    router.push("/");
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-matcha"></div>
+    </div>
+  );
 
   return (
     <div className="flex flex-col h-[100dvh] bg-black text-white relative overflow-hidden">
-      {/* Background Glow */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-matcha/5 blur-[120px] -z-10 rounded-full" />
       
-      {/* Header */}
       <header className="flex items-center justify-between p-4 border-b border-white/5 backdrop-blur-md bg-black/50 z-10">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => router.push("/")} className="rounded-full hover:bg-white/10">
@@ -132,12 +176,64 @@ export default function ChatPage() {
             </div>
           </div>
         </div>
-        <Button variant="ghost" size="icon" className="rounded-full">
-          <Info className="w-5 h-5 text-zinc-500" />
-        </Button>
+        
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="rounded-full hover:bg-white/10"
+            onClick={() => setShowInfoPanel(!showInfoPanel)}
+          >
+            <Info className="w-5 h-5 text-zinc-500" />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="rounded-full hover:bg-white/10">
+                <MoreVertical className="w-5 h-5 text-zinc-500" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="rounded-2xl border-zinc-800 bg-zinc-900">
+              <DropdownMenuItem onClick={startNewChat} className="gap-2 cursor-pointer rounded-xl">
+                <RefreshCw className="w-4 h-4" />
+                Start New Chat
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="bg-zinc-800" />
+              <DropdownMenuItem 
+                onClick={() => setShowDeleteDialog(true)} 
+                className="gap-2 cursor-pointer text-red-400 focus:text-red-400 rounded-xl"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete Chat
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </header>
 
-      {/* Chat Area */}
+      <AnimatePresence>
+        {showInfoPanel && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-sm overflow-hidden"
+          >
+            <div className="p-4 space-y-3 max-w-3xl mx-auto">
+              <div>
+                <span className="text-[10px] uppercase tracking-wider text-zinc-500">Personality</span>
+                <p className="text-sm text-zinc-300 mt-1">{character.personality || "No personality defined"}</p>
+              </div>
+              {persona && (
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-500">Chatting as</span>
+                  <p className="text-sm text-matcha mt-1">{persona.name}</p>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth custom-scrollbar" ref={scrollRef}>
         <div className="max-w-3xl mx-auto space-y-6">
           <AnimatePresence initial={false}>
@@ -186,7 +282,6 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Input Area */}
       <div className="p-4 bg-black/50 backdrop-blur-xl border-t border-white/5">
         <form onSubmit={handleSend} className="max-w-3xl mx-auto relative group">
           <Input
@@ -208,6 +303,23 @@ export default function ChatPage() {
           Remember: Everything Characters say is made up!
         </p>
       </div>
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent className="rounded-[2rem] border-zinc-800 bg-zinc-900">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this chat?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will delete all messages in this conversation. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-full">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={deleteChat} className="rounded-full bg-red-500 hover:bg-red-600">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

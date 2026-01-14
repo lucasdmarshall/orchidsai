@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PlusCircle, MessageSquare, User, Home } from "lucide-react";
+import { PlusCircle, MessageSquare, User, Home, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 
@@ -13,6 +13,7 @@ export function Navigation() {
     { href: "/", icon: Home, label: "Home" },
     { href: "/create/character", icon: PlusCircle, label: "Character" },
     { href: "/create/persona", icon: User, label: "Persona" },
+    { href: "/profile", icon: UserCircle, label: "Profile" },
   ];
 
   return (
