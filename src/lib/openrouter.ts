@@ -1,22 +1,22 @@
 // OpenRouter API client with key rotation
-// No consecutive key repeats
+// Keys should be stored in environment variables (comma-separated for multiple keys)
 
-const API_KEYS = [
-  "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",
-  "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",
-  "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",
-  "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",
-  "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",
-  "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",
-  "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",
-  "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",
-  "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",
-  "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",
-];
+function getApiKeys(): string[] {
+  const envKeys = process.env.OPENROUTER_API_KEYS || process.env.OPENROUTER_API_KEY || "";
+  if (!envKeys) {
+    console.error("No OpenRouter API keys configured. Set OPENROUTER_API_KEYS in environment variables.");
+    return [];
+  }
+  return envKeys.split(",").map(k => k.trim()).filter(Boolean);
+}
 
 let lastKeyIndex = -1;
 
 export function getRandomApiKey(): string {
+  const API_KEYS = getApiKeys();
+  if (API_KEYS.length === 0) {
+    throw new Error("No OpenRouter API keys configured");
+  }
   let newIndex: number;
   do {
     newIndex = Math.floor(Math.random() * API_KEYS.length);
