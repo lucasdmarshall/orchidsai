@@ -29,15 +29,16 @@ export interface ModelConfig {
   id: string;
   name: string;
   supportsThinking: boolean;
+  thinkingEnabled?: boolean;
   supportsImage: boolean;
 }
 
 export const DEFAULT_MODELS: ModelConfig[] = [
-  { id: "xiaomi/mimo-v2-flash:free", name: "MiMo v2 Flash", supportsThinking: true, supportsImage: false },
-  { id: "tngtech/deepseek-r1t2-chimera:free", name: "DeepSeek R1T2", supportsThinking: true, supportsImage: false },
-  { id: "google/gemini-2.0-flash-exp:free", name: "Gemini 2.0 Flash", supportsThinking: false, supportsImage: true },
-  { id: "qwen/qwen-2.5-vl-7b-instruct:free", name: "Qwen 2.5 VL", supportsThinking: false, supportsImage: true },
-  { id: "google/gemma-3-27b-it:free", name: "Gemma 3 27B", supportsThinking: false, supportsImage: true },
+  { id: "xiaomi/mimo-v2-flash:free", name: "MiMo v2 Flash", supportsThinking: true, thinkingEnabled: true, supportsImage: false },
+  { id: "tngtech/deepseek-r1t2-chimera:free", name: "DeepSeek R1T2", supportsThinking: true, thinkingEnabled: true, supportsImage: false },
+  { id: "google/gemini-2.0-flash-exp:free", name: "Gemini 2.0 Flash", supportsThinking: false, thinkingEnabled: false, supportsImage: true },
+  { id: "qwen/qwen-2.5-vl-7b-instruct:free", name: "Qwen 2.5 VL", supportsThinking: false, thinkingEnabled: false, supportsImage: true },
+  { id: "google/gemma-3-27b-it:free", name: "Gemma 3 27B", supportsThinking: false, thinkingEnabled: false, supportsImage: true },
 ];
 
 export const DEFAULT_SFW_SYSTEM_PROMPT = `### ROLEPLAY INSTRUCTIONS FOR {{char}}

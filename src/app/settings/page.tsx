@@ -120,7 +120,7 @@ export default function SettingsPage() {
         }
         setSettings({
             ...settings,
-            models: [...settings.models, { ...newModel }],
+            models: [...settings.models, { ...newModel, thinkingEnabled: newModel.supportsThinking }],
         });
         setNewModel({ id: "", name: "", supportsThinking: false, supportsImage: false });
         toast.success("Model added!");
@@ -138,7 +138,7 @@ export default function SettingsPage() {
         setSettings({
             ...settings,
             models: settings.models.map((m) =>
-                m.id === modelId ? { ...m, supportsThinking: !m.supportsThinking } : m
+                m.id === modelId ? { ...m, thinkingEnabled: !m.thinkingEnabled } : m
             ),
         });
     };
@@ -368,7 +368,7 @@ export default function SettingsPage() {
                                                 className="rounded-full text-xs"
                                                 onClick={() => toggleModelThinking(model.id)}
                                             >
-                                                <Brain className={`w-4 h-4 ${model.supportsThinking ? "text-purple-400" : "text-zinc-600"}`} />
+                                                <Brain className={`w-4 h-4 ${model.thinkingEnabled ? "text-purple-400" : "text-zinc-600"}`} />
                                             </Button>
                                         )}
                                         <AlertDialog>

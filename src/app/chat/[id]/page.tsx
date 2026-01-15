@@ -558,11 +558,11 @@ export default function ChatPage() {
                       {msg.role === "user" ? <User className="w-4 h-4" /> : character.name[0]}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="space-y-2">
-                    {/* Thinking section */}
-                    {msg.thinking && (
-                      <Collapsible>
-                        <CollapsibleTrigger className="flex items-center gap-2 text-xs text-purple-400 hover:text-purple-300 transition-colors">
+                    <div className="space-y-2">
+                      {/* Thinking section */}
+                      {msg.thinking && (selectedModel.thinkingEnabled ?? selectedModel.supportsThinking) && (
+                        <Collapsible>
+                          <CollapsibleTrigger className="flex items-center gap-2 text-xs text-purple-400 hover:text-purple-300 transition-colors">
                           <Brain className="w-3 h-3" />
                           <span>Thinking</span>
                           <ChevronDown className="w-3 h-3" />
@@ -608,16 +608,16 @@ export default function ChatPage() {
                     {character.name[0]}
                   </AvatarFallback>
                 </Avatar>
-                <div className="space-y-2">
-                  {streamingThinking && (
-                    <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Brain className="w-3 h-3 text-purple-400" />
-                        <span className="text-purple-400">Thinking...</span>
+                  <div className="space-y-2">
+                    {streamingThinking && (selectedModel.thinkingEnabled ?? selectedModel.supportsThinking) && (
+                      <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Brain className="w-3 h-3 text-purple-400" />
+                          <span className="text-purple-400">Thinking...</span>
+                        </div>
+                        {streamingThinking}
                       </div>
-                      {streamingThinking}
-                    </div>
-                  )}
+                    )}
                   {streamingContent ? (
                     <div className="p-4 rounded-[1.5rem] text-sm leading-relaxed bg-zinc-900 border border-zinc-800 rounded-tl-none text-zinc-200">
                       {streamingContent}
