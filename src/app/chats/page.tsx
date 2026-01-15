@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
@@ -30,8 +30,38 @@ export default function ChatsPage() {
   const [chats, setChats] = useState<ChatSession[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const runJanitor = useCallback(async () => {
+    const { data: allChats } = await supabase
+      .from("chats")
+      .select("id, character_id, updated_at")
+      .order("updated_at", { ascending: false });
+
+    if (!allChats) return;
+
+    const latestByCharacter = new Map<string, string>();
+    const chatsToDelete: string[] = [];
+
+    for (const chat of allChats) {
+      if (!latestByCharacter.has(chat.character_id)) {
+        latestByCharacter.set(chat.character_id, chat.id);
+      } else {
+        chatsToDelete.push(chat.id);
+      }
+    }
+
+    if (chatsToDelete.length > 0) {
+      for (const chatId of chatsToDelete) {
+        await supabase.from("messages").delete().eq("chat_id", chatId);
+      }
+      await supabase.from("chats").delete().in("id", chatsToDelete);
+      toast.info(`Cleaned up ${chatsToDelete.length} old chat(s)`);
+    }
+  }, []);
+
   useEffect(() => {
     async function fetchChats() {
+      await runJanitor();
+
       const { data: chatsData, error } = await supabase
         .from("chats")
         .select(`
@@ -67,7 +97,7 @@ export default function ChatsPage() {
       setLoading(false);
     }
     fetchChats();
-  }, []);
+  }, [runJanitor]);
 
   const deleteChat = async (chatId: string, e: React.MouseEvent) => {
     e.stopPropagation();
