@@ -7,19 +7,53 @@ import { CharacterCard } from "@/components/CharacterCard";
 import { Input } from "@/components/ui/input";
 import { Search, Sparkles, TrendingUp } from "lucide-react";
 
+interface Tag {
+  id: string;
+  name: string;
+  color: string;
+}
+
+interface Character {
+  id: string;
+  name: string;
+  title: string;
+  avatar_url: string;
+  content_rating: "sfw" | "nsfw";
+  tags?: Tag[];
+}
+
 export default function Home() {
-  const [characters, setCharacters] = useState<any[]>([]);
+  const [characters, setCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
     async function fetchCharacters() {
-      const { data, error } = await supabase
+      const { data: chars } = await supabase
         .from("characters")
         .select("*")
         .order("created_at", { ascending: false });
 
-      if (data) setCharacters(data);
+      if (chars) {
+        const { data: characterTags } = await supabase
+          .from("character_tags")
+          .select("character_id, tags(id, name, color)")
+          .in("character_id", chars.map((c) => c.id));
+
+        const tagsByCharacter = new Map<string, Tag[]>();
+        characterTags?.forEach((ct: { character_id: string; tags: Tag }) => {
+          const existing = tagsByCharacter.get(ct.character_id) || [];
+          if (ct.tags) existing.push(ct.tags);
+          tagsByCharacter.set(ct.character_id, existing);
+        });
+
+        const enrichedChars = chars.map((char) => ({
+          ...char,
+          tags: tagsByCharacter.get(char.id) || [],
+        }));
+
+        setCharacters(enrichedChars);
+      }
       setLoading(false);
     }
     fetchCharacters();
@@ -79,14 +113,16 @@ export default function Home() {
               ))
             ) : filteredCharacters.length > 0 ? (
               filteredCharacters.map((char) => (
-                <CharacterCard
-                  key={char.id}
-                  id={char.id}
-                  name={char.name}
-                  title={char.title}
-                  avatar_url={char.avatar_url}
-                />
-              ))
+                  <CharacterCard
+                    key={char.id}
+                    id={char.id}
+                    name={char.name}
+                    title={char.title}
+                    avatar_url={char.avatar_url}
+                    content_rating={char.content_rating}
+                    tags={char.tags}
+                  />
+                ))
             ) : (
               <div className="col-span-full text-center py-20 text-zinc-500">
                 No characters found matching your search.
