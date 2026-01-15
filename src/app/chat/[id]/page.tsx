@@ -532,7 +532,7 @@ export default function ChatPage() {
         )}
       </AnimatePresence>
 
-      <div className="flex-1 overflow-y-auto p-4 pt-20 space-y-6 scroll-smooth custom-scrollbar" ref={scrollRef}>
+      <div className="flex-1 overflow-y-auto p-4 pt-20 pb-44 space-y-6 scroll-smooth custom-scrollbar" ref={scrollRef}>
         <div className="max-w-3xl mx-auto space-y-6">
           <AnimatePresence initial={false}>
             {messages.map((msg) => (
