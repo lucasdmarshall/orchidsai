@@ -80,7 +80,7 @@ export default function SettingsPage() {
             }
         } else {
             // No saved settings - use defaults
-            setSettings({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 512, models: DEFAULT_MODELS });
+            setSettings({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 1024, models: DEFAULT_MODELS });
         }
         setLoading(false);
         // Mark initial load complete after a short delay
