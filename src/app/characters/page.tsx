@@ -206,7 +206,7 @@ export default function CharactersPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="relative z-10 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                           <MoreVertical className="w-4 h-4" />
                         </Button>
@@ -242,7 +242,7 @@ export default function CharactersPage() {
 
                   <div
                     onClick={() => router.push(`/chat/${char.id}`)}
-                    className="absolute inset-0 cursor-pointer rounded-2xl"
+                    className="absolute inset-0 cursor-pointer rounded-2xl z-0"
                   />
                 </motion.div>
               ))}

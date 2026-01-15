@@ -616,7 +616,7 @@ export default function ChatPage() {
         </div>
       </div>
 
-      <div className="sticky bottom-24 p-4 bg-black/80 backdrop-blur-xl border-t border-white/5 z-30">
+      <div className="fixed bottom-16 left-0 right-0 p-4 bg-black/80 backdrop-blur-xl border-t border-white/5 z-30">
         <form onSubmit={handleSend} className="max-w-3xl mx-auto relative group">
           {/* Image preview */}
           {imageInput && (
