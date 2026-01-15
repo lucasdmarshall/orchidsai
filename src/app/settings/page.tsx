@@ -61,6 +61,9 @@ export default function SettingsPage() {
         supportsImage: false,
     });
 
+    const [hasChanges, setHasChanges] = useState(false);
+    const [initialLoad, setInitialLoad] = useState(true);
+
     useEffect(() => {
         // Load settings from localStorage
         const saved = localStorage.getItem("orchids_settings");
@@ -73,19 +76,38 @@ export default function SettingsPage() {
                     models: parsed.models || DEFAULT_MODELS,
                 });
             } catch {
-                setSettings({ systemPrompt: "", maxTokens: 512, models: DEFAULT_MODELS });
+                setSettings({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 512, models: DEFAULT_MODELS });
             }
+        } else {
+            // No saved settings - use defaults
+            setSettings({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 512, models: DEFAULT_MODELS });
         }
         setLoading(false);
+        // Mark initial load complete after a short delay
+        setTimeout(() => setInitialLoad(false), 100);
     }, []);
+
+    // Auto-save when settings change (debounced)
+    useEffect(() => {
+        if (initialLoad || loading) return;
+        
+        setHasChanges(true);
+        const timeout = setTimeout(() => {
+            localStorage.setItem("orchids_settings", JSON.stringify(settings));
+            setHasChanges(false);
+        }, 500);
+
+        return () => clearTimeout(timeout);
+    }, [settings, initialLoad, loading]);
 
     const saveSettings = () => {
         setSaving(true);
         localStorage.setItem("orchids_settings", JSON.stringify(settings));
+        setHasChanges(false);
         setTimeout(() => {
             setSaving(false);
             toast.success("Settings saved!");
-        }, 500);
+        }, 300);
     };
 
     const addModel = () => {
@@ -152,10 +174,10 @@ export default function SettingsPage() {
                     <Button
                         onClick={saveSettings}
                         disabled={saving}
-                        className="rounded-full bg-matcha hover:bg-matcha-dark text-black gap-2"
+                        className={`rounded-full gap-2 ${hasChanges ? "bg-yellow-500 hover:bg-yellow-600" : "bg-matcha hover:bg-matcha-dark"} text-black`}
                     >
                         <Save className="w-4 h-4" />
-                        {saving ? "Saving..." : "Save"}
+                        {saving ? "Saving..." : hasChanges ? "Unsaved" : "Saved ✓"}
                     </Button>
                 </motion.div>
 
@@ -166,16 +188,29 @@ export default function SettingsPage() {
                     transition={{ delay: 0.1 }}
                     className="space-y-4"
                 >
-                    <div className="flex items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-matcha" />
-                        <Label className="text-lg font-semibold">System Prompt</Label>
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Sparkles className="w-5 h-5 text-matcha" />
+                            <Label className="text-lg font-semibold">System Prompt</Label>
+                        </div>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSettings({ ...settings, systemPrompt: DEFAULT_SYSTEM_PROMPT })}
+                            className="text-xs text-zinc-500 hover:text-matcha"
+                        >
+                            Reset to Default
+                        </Button>
                     </div>
                     <Textarea
                         value={settings.systemPrompt}
                         onChange={(e) => setSettings({ ...settings, systemPrompt: e.target.value })}
                         placeholder="Enter a custom system prompt to guide the AI's behavior..."
-                        className="min-h-[200px] rounded-2xl bg-zinc-900/50 border-zinc-800 focus:border-matcha"
+                        className="min-h-[200px] rounded-2xl bg-zinc-900/50 border-zinc-800 focus:border-matcha font-mono text-sm"
                     />
+                    <p className="text-xs text-zinc-600">
+                        Use {"{{char}}"} for character name and {"{{user}}"} for user name placeholders.
+                    </p>
                 </motion.section>
 
                 {/* Max Tokens */}

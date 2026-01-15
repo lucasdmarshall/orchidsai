@@ -19,6 +19,8 @@ export default function CreateCharacter() {
     title: "",
     greeting: "",
     personality: "",
+    scenario: "",
+    example_dialogue: "",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -108,6 +110,29 @@ export default function CreateCharacter() {
               className="rounded-[2rem] bg-zinc-800/50 border-zinc-700 min-h-[150px]"
               value={formData.personality}
               onChange={(e) => setFormData({ ...formData, personality: e.target.value })}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="scenario">Scenario (Optional)</Label>
+            <Textarea
+              id="scenario"
+              placeholder="Describe the setting or situation where the roleplay takes place. e.g. 'You find yourself in a dimly lit Victorian parlor...'"
+              className="rounded-[2rem] bg-zinc-800/50 border-zinc-700 min-h-[100px]"
+              value={formData.scenario}
+              onChange={(e) => setFormData({ ...formData, scenario: e.target.value })}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="example_dialogue">Example Dialogue (Optional)</Label>
+            <Textarea
+              id="example_dialogue"
+              placeholder="Show how the character speaks. Use *actions* and &quot;dialogue&quot;. e.g.:
+*adjusts monocle* &quot;Fascinating... tell me more.&quot;"
+              className="rounded-[2rem] bg-zinc-800/50 border-zinc-700 min-h-[120px] font-mono text-sm"
+              value={formData.example_dialogue}
+              onChange={(e) => setFormData({ ...formData, example_dialogue: e.target.value })}
             />
           </div>
 

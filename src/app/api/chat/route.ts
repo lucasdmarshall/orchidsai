@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { callOpenRouter, parseThinkingContent, ChatMessage } from "@/lib/openrouter";
+import { callOpenRouter, parseThinkingContent, ChatMessage, DEFAULT_SYSTEM_PROMPT } from "@/lib/openrouter";
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,33 +11,53 @@ export async function POST(req: NextRequest) {
       systemPrompt,
       characterName,
       characterPersonality,
+      characterScenario,
+      characterExampleDialogue,
       userPersona,
       contextSummary
     } = body;
 
-    // Build the system message
-    let systemContent = systemPrompt || "You are a helpful AI assistant.";
+    // Build the comprehensive roleplay system prompt
+    const basePrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    
+    // Replace placeholders and build character context
+    let systemContent = basePrompt
+      .replace(/\{\{char\}\}/gi, characterName || "the character")
+      .replace(/\{\{user\}\}/gi, userPersona?.split(":")[0]?.trim() || "the user");
 
+    // Add character definition block
     if (characterName) {
-      systemContent = `You are ${characterName}. ${characterPersonality || ""}`;
+      systemContent += `\n\n### CHARACTER DEFINITION:
+**Name:** ${characterName}
+**Personality:** ${characterPersonality || "Not specified"}`;
+      
+      if (characterScenario) {
+        systemContent += `\n**Scenario:** ${characterScenario}`;
+      }
+      
+      if (characterExampleDialogue) {
+        systemContent += `\n**Example Dialogue Style:**\n${characterExampleDialogue}`;
+      }
     }
 
+    // Add user persona context
     if (userPersona) {
-      systemContent += `\n\nThe user you are talking to: ${userPersona}`;
+      systemContent += `\n\n### USER PERSONA:
+${userPersona}
+(Acknowledge and respond to the user according to their persona.)`;
+    }
+
+    // Add conversation context summary for continuity
+    if (contextSummary) {
+      systemContent += `\n\n### RECENT CONVERSATION CONTEXT:
+${contextSummary}
+(Use this context to maintain continuity. Do not repeat what was already said.)`;
     }
 
     // Build messages array for OpenRouter
     const apiMessages: ChatMessage[] = [
       { role: "system", content: systemContent }
     ];
-
-    // Add context summary if provided
-    if (contextSummary) {
-      apiMessages.push({
-        role: "system",
-        content: `[Previous conversation context]\n${contextSummary}\n[End context]`
-      });
-    }
 
     // Add conversation messages
     if (Array.isArray(messages)) {

@@ -46,7 +46,7 @@ import {
   Check,
   Users
 } from "lucide-react";
-import { DEFAULT_MODELS, ModelConfig, summarizeContext } from "@/lib/openrouter";
+import { DEFAULT_MODELS, ModelConfig, summarizeContext, DEFAULT_SYSTEM_PROMPT } from "@/lib/openrouter";
 
 function parseNarrationContent(content: string): React.ReactNode {
   const regex = /(\*[^*]+\*)|("[^"]+")/;
@@ -101,7 +101,7 @@ export default function ChatPage() {
   const [models, setModels] = useState<ModelConfig[]>(DEFAULT_MODELS);
   const [selectedModel, setSelectedModel] = useState<ModelConfig>(DEFAULT_MODELS[0]);
   const [imageInput, setImageInput] = useState<string | null>(null);
-  const [settings, setSettings] = useState({ systemPrompt: "", maxTokens: 512 });
+  const [settings, setSettings] = useState({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 512 });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const saveMessageToDb = async (message: Message, currentChatId: string) => {
@@ -151,7 +151,7 @@ export default function ChatPage() {
       try {
         const parsed = JSON.parse(savedSettings);
         setSettings({
-          systemPrompt: parsed.systemPrompt || "",
+          systemPrompt: parsed.systemPrompt || DEFAULT_SYSTEM_PROMPT,
           maxTokens: parsed.maxTokens || 512,
         });
         if (parsed.models?.length > 0) {
@@ -281,18 +281,27 @@ export default function ChatPage() {
       await saveMessageToDb(userMessage, chatId);
 
       try {
+        // Build conversation history (last N messages for context window)
+        const recentMessages = [...messages, userMessage].slice(-10).map(m => ({
+          role: m.role,
+          content: m.content,
+          image: m.image,
+        }));
+
         const response = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            messages: [{ role: "user", content: input, image: imageInput }],
+            messages: recentMessages,
             model: selectedModel.id,
             maxTokens: settings.maxTokens,
             systemPrompt: settings.systemPrompt,
             characterName: character?.name,
             characterPersonality: character?.personality,
+            characterScenario: character?.scenario,
+            characterExampleDialogue: character?.example_dialogue,
             userPersona: persona ? `${persona.name}: ${persona.personality || ""}` : undefined,
-            contextSummary,
+            contextSummary: messages.length > 10 ? contextSummary : undefined,
           }),
         });
 

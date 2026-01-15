@@ -53,6 +53,8 @@ interface Character {
   id: string;
   name: string;
   title: string;
+  scenario?: string;
+  example_dialogue?: string;
   greeting: string;
   personality: string;
   avatar_url: string;
@@ -71,6 +73,8 @@ export default function ProfilePage() {
     title: "",
     greeting: "",
     personality: "",
+    scenario: "",
+    example_dialogue: "",
   });
 
   useEffect(() => {
@@ -126,6 +130,8 @@ export default function ProfilePage() {
         title: characterForm.title,
         greeting: characterForm.greeting,
         personality: characterForm.personality,
+        scenario: characterForm.scenario,
+        example_dialogue: characterForm.example_dialogue,
       })
       .eq("id", editingCharacter.id);
     toast.success("Character updated!");
@@ -138,13 +144,15 @@ export default function ProfilePage() {
     setPersonaForm({ name: persona.name, personality: persona.personality || "" });
   };
 
-  const openEditCharacter = (character: Character) => {
+  const openEditCharacter = (character: any) => {
     setEditingCharacter(character);
     setCharacterForm({
       name: character.name,
       title: character.title || "",
       greeting: character.greeting || "",
       personality: character.personality || "",
+      scenario: character.scenario || "",
+      example_dialogue: character.example_dialogue || "",
     });
   };
 
@@ -442,6 +450,28 @@ export default function ProfilePage() {
                                   setCharacterForm({ ...characterForm, personality: e.target.value })
                                 }
                                 className="rounded-[1.5rem] bg-zinc-800/50 border-zinc-700 min-h-[100px]"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Scenario (Optional)</Label>
+                              <Textarea
+                                value={characterForm.scenario}
+                                onChange={(e) =>
+                                  setCharacterForm({ ...characterForm, scenario: e.target.value })
+                                }
+                                placeholder="Describe the roleplay setting..."
+                                className="rounded-[1.5rem] bg-zinc-800/50 border-zinc-700 min-h-[80px]"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Example Dialogue (Optional)</Label>
+                              <Textarea
+                                value={characterForm.example_dialogue}
+                                onChange={(e) =>
+                                  setCharacterForm({ ...characterForm, example_dialogue: e.target.value })
+                                }
+                                placeholder="Show how the character speaks..."
+                                className="rounded-[1.5rem] bg-zinc-800/50 border-zinc-700 min-h-[80px] font-mono text-sm"
                               />
                             </div>
                             <DialogClose asChild>
