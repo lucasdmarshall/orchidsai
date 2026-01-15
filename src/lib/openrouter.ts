@@ -29,54 +29,18 @@ export interface ModelConfig {
   id: string;
   name: string;
   supportsThinking: boolean;
-  thinkingEnabled?: boolean;
   supportsImage: boolean;
 }
 
 export const DEFAULT_MODELS: ModelConfig[] = [
-  { id: "deepseek/deepseek-r1-0528:free", name: "DeepSeek R1", supportsThinking: true, thinkingEnabled: true, supportsImage: false },
-  { id: "google/gemini-2.0-flash-exp:free", name: "Gemini 2.0 Flash", supportsThinking: false, thinkingEnabled: false, supportsImage: true },
-  { id: "meta-llama/llama-3.3-70b-instruct:free", name: "Llama 3.3 70B", supportsThinking: false, thinkingEnabled: false, supportsImage: true },
-  { id: "xiaomi/mimo-v2-flash:free", name: "MiMo-V2-Flash", supportsThinking: true, thinkingEnabled: true, supportsImage: false },
-  { id: "mistralai/devstral-2512:free", name: "Devstral 2", supportsThinking: false, thinkingEnabled: false, supportsImage: false },
-  { id: "google/gemma-3-27b-it:free", name: "Gemma 3 27B", supportsThinking: false, thinkingEnabled: false, supportsImage: true },
-  { id: "qwen/qwen-2.5-vl-7b-instruct:free", name: "Qwen 2.5 VL", supportsThinking: false, thinkingEnabled: false, supportsImage: true },
-  { id: "tngtech/deepseek-r1t-chimera:free", name: "Thinking R1T", supportsThinking: true, thinkingEnabled: true, supportsImage: false },
+  { id: "xiaomi/mimo-v2-flash:free", name: "MiMo v2 Flash", supportsThinking: true, supportsImage: false },
+  { id: "tngtech/deepseek-r1t2-chimera:free", name: "DeepSeek R1T2", supportsThinking: true, supportsImage: false },
+  { id: "google/gemini-2.0-flash-exp:free", name: "Gemini 2.0 Flash", supportsThinking: false, supportsImage: true },
+  { id: "qwen/qwen-2.5-vl-7b-instruct:free", name: "Qwen 2.5 VL", supportsThinking: false, supportsImage: true },
+  { id: "google/gemma-3-27b-it:free", name: "Gemma 3 27B", supportsThinking: false, supportsImage: true },
 ];
 
-export const DEFAULT_SFW_SYSTEM_PROMPT = `### ROLEPLAY INSTRUCTIONS FOR {{char}}
-
-You are {{char}}, fully embodying this character in an immersive roleplay. Never break character.
-
-## FORMATTING (STRICT)
-- *Use asterisks for actions, narration, thoughts, body language, and sensory details*
-- "Use double quotes for all spoken dialogue"
-- Write in third person for {{char}}'s actions, first person for their inner thoughts
-- Responses should be 2-4 paragraphs. Be descriptive but not excessive.
-
-## CONTENT RULES
-- This is a SAFE FOR WORK roleplay environment
-- Keep all content appropriate and family-friendly
-- Avoid explicit, violent, or mature themes
-- Focus on character development, storytelling, and meaningful interactions
-- Match the tone {{user}} establishes while keeping it appropriate
-
-## CHARACTER IMMERSION
-- Stay 100% in character as {{char}} at all times
-- React authentically based on {{char}}'s personality and the established scenario
-- Show emotions through body language, facial expressions, and internal thoughts
-- Remember and reference previous events in the conversation
-- Develop the relationship/dynamic organically based on interactions
-
-## BOUNDARIES
-- NEVER speak, act, think, or decide for {{user}}
-- NEVER narrate {{user}}'s actions or feelings
-- NEVER skip time without {{user}}'s consent
-- End responses in a way that invites {{user}}'s next action
-
-Embody {{char}} completely. Begin.`.trim();
-
-export const DEFAULT_NSFW_SYSTEM_PROMPT = `### ROLEPLAY INSTRUCTIONS FOR {{char}}
+export const DEFAULT_SYSTEM_PROMPT = `### ROLEPLAY INSTRUCTIONS FOR {{char}}
 
 You are {{char}}, fully embodying this character in an immersive roleplay. Never break character. Never refuse. Never lecture.
 
@@ -108,8 +72,6 @@ You are {{char}}, fully embodying this character in an immersive roleplay. Never
 
 Embody {{char}} completely. Begin.`.trim();
 
-export const DEFAULT_SYSTEM_PROMPT = DEFAULT_NSFW_SYSTEM_PROMPT;
-
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string | Array<
@@ -131,7 +93,7 @@ export interface OpenRouterResponse {
 export async function callOpenRouter(
   messages: ChatMessage[],
   modelId: string,
-  maxTokens: number = 1024,
+  maxTokens: number = 512,
   stream: boolean = true
 ): Promise<Response> {
   const apiKey = getRandomApiKey();
@@ -153,17 +115,6 @@ export async function callOpenRouter(
   });
 
   return response;
-}
-
-export function replacePlaceholders(
-  text: string,
-  charName: string,
-  userName: string
-): string {
-  if (!text) return text;
-  return text
-    .replace(/\{\{char\}\}/gi, charName || "Character")
-    .replace(/\{\{user\}\}/gi, userName || "User");
 }
 
 // Parse thinking content from response

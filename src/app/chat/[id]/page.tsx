@@ -46,7 +46,7 @@ import {
   Check,
   Users
 } from "lucide-react";
-import { DEFAULT_MODELS, ModelConfig, summarizeContext, replacePlaceholders } from "@/lib/openrouter";
+import { DEFAULT_MODELS, ModelConfig, summarizeContext, DEFAULT_SYSTEM_PROMPT } from "@/lib/openrouter";
 
 function parseNarrationContent(content: string): React.ReactNode {
   const regex = /(\*[^*]+\*)|("[^"]+")/;
@@ -101,7 +101,7 @@ export default function ChatPage() {
   const [models, setModels] = useState<ModelConfig[]>(DEFAULT_MODELS);
   const [selectedModel, setSelectedModel] = useState<ModelConfig>(DEFAULT_MODELS[0]);
   const [imageInput, setImageInput] = useState<string | null>(null);
-  const [settings, setSettings] = useState({ sfwSystemPrompt: "", nsfwSystemPrompt: "", maxTokens: 1024 });
+  const [settings, setSettings] = useState({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 512 });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const saveMessageToDb = async (message: Message, currentChatId: string) => {
@@ -151,9 +151,8 @@ export default function ChatPage() {
       try {
         const parsed = JSON.parse(savedSettings);
         setSettings({
-          sfwSystemPrompt: parsed.sfwSystemPrompt || "",
-          nsfwSystemPrompt: parsed.nsfwSystemPrompt || "",
-          maxTokens: parsed.maxTokens || 1024,
+          systemPrompt: parsed.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+          maxTokens: parsed.maxTokens || 512,
         });
         if (parsed.models?.length > 0) {
           setModels(parsed.models);
@@ -203,26 +202,23 @@ export default function ChatPage() {
         .eq("chat_id", currentChatId)
         .order("created_at", { ascending: true });
 
-        if (savedMessages && savedMessages.length > 0) {
-          setMessages(savedMessages.map((m: any) => ({
-            id: m.id,
-            role: m.role,
-            content: m.content,
-            created_at: m.created_at,
-          })));
-        } else {
-          const userName = selectedPersona?.name || "User";
-          const charName = charData?.name || "Character";
-          const processedGreeting = replacePlaceholders(charData?.greeting || "Hello!", charName, userName);
-          const greetingMessage: Message = {
-            id: "greeting",
-            role: "assistant",
-            content: processedGreeting,
-            created_at: new Date().toISOString(),
-          };
-          setMessages([greetingMessage]);
-          await saveMessageToDb(greetingMessage, currentChatId);
-        }
+      if (savedMessages && savedMessages.length > 0) {
+        setMessages(savedMessages.map((m: any) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          created_at: m.created_at,
+        })));
+      } else {
+        const greetingMessage: Message = {
+          id: "greeting",
+          role: "assistant",
+          content: charData?.greeting || "Hello!",
+          created_at: new Date().toISOString(),
+        };
+        setMessages([greetingMessage]);
+        await saveMessageToDb(greetingMessage, currentChatId);
+      }
 
       setLoading(false);
     }
@@ -305,13 +301,11 @@ export default function ChatPage() {
             messages: recentMessages,
             model: selectedModel.id,
             maxTokens: settings.maxTokens,
-            sfwSystemPrompt: settings.sfwSystemPrompt,
-            nsfwSystemPrompt: settings.nsfwSystemPrompt,
+            systemPrompt: settings.systemPrompt,
             characterName: character?.name,
             characterPersonality: character?.personality,
             characterScenario: character?.scenario,
             characterExampleDialogue: character?.example_dialogue,
-            characterContentRating: character?.content_rating || "nsfw",
             userPersona: persona ? `${persona.name}: ${persona.personality || ""}` : undefined,
             contextSummary: contextSummary || undefined,
           }),
@@ -387,20 +381,17 @@ export default function ChatPage() {
       .single();
 
     if (newChat) {
-        setChatId(newChat.id);
-        const userName = persona?.name || "User";
-        const charName = character?.name || "Character";
-        const processedGreeting = replacePlaceholders(character?.greeting || "Hello!", charName, userName);
-        const greetingMessage: Message = {
-          id: "greeting",
-          role: "assistant",
-          content: processedGreeting,
-          created_at: new Date().toISOString(),
-        };
-        setMessages([greetingMessage]);
-        await saveMessageToDb(greetingMessage, newChat.id);
-        toast.success("Started a new chat!");
-      }
+      setChatId(newChat.id);
+      const greetingMessage: Message = {
+        id: "greeting",
+        role: "assistant",
+        content: character?.greeting || "Hello!",
+        created_at: new Date().toISOString(),
+      };
+      setMessages([greetingMessage]);
+      await saveMessageToDb(greetingMessage, newChat.id);
+      toast.success("Started a new chat!");
+    }
   };
 
   const deleteChat = async () => {
@@ -541,7 +532,7 @@ export default function ChatPage() {
         )}
       </AnimatePresence>
 
-      <div className="flex-1 overflow-y-auto p-4 pt-20 pb-44 space-y-6 scroll-smooth custom-scrollbar" ref={scrollRef}>
+      <div className="flex-1 overflow-y-auto p-4 pt-20 space-y-6 scroll-smooth custom-scrollbar" ref={scrollRef}>
         <div className="max-w-3xl mx-auto space-y-6">
           <AnimatePresence initial={false}>
             {messages.map((msg) => (
@@ -558,11 +549,11 @@ export default function ChatPage() {
                       {msg.role === "user" ? <User className="w-4 h-4" /> : character.name[0]}
                     </AvatarFallback>
                   </Avatar>
-                    <div className="space-y-2">
-                      {/* Thinking section */}
-                      {msg.thinking && (selectedModel.thinkingEnabled ?? selectedModel.supportsThinking) && (
-                        <Collapsible>
-                          <CollapsibleTrigger className="flex items-center gap-2 text-xs text-purple-400 hover:text-purple-300 transition-colors">
+                  <div className="space-y-2">
+                    {/* Thinking section */}
+                    {msg.thinking && (
+                      <Collapsible>
+                        <CollapsibleTrigger className="flex items-center gap-2 text-xs text-purple-400 hover:text-purple-300 transition-colors">
                           <Brain className="w-3 h-3" />
                           <span>Thinking</span>
                           <ChevronDown className="w-3 h-3" />
@@ -608,16 +599,16 @@ export default function ChatPage() {
                     {character.name[0]}
                   </AvatarFallback>
                 </Avatar>
-                  <div className="space-y-2">
-                    {streamingThinking && (selectedModel.thinkingEnabled ?? selectedModel.supportsThinking) && (
-                      <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Brain className="w-3 h-3 text-purple-400" />
-                          <span className="text-purple-400">Thinking...</span>
-                        </div>
-                        {streamingThinking}
+                <div className="space-y-2">
+                  {streamingThinking && (
+                    <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Brain className="w-3 h-3 text-purple-400" />
+                        <span className="text-purple-400">Thinking...</span>
                       </div>
-                    )}
+                      {streamingThinking}
+                    </div>
+                  )}
                   {streamingContent ? (
                     <div className="p-4 rounded-[1.5rem] text-sm leading-relaxed bg-zinc-900 border border-zinc-800 rounded-tl-none text-zinc-200">
                       {streamingContent}

@@ -38,20 +38,18 @@ import {
     Sparkles,
 } from "lucide-react";
 import Link from "next/link";
-import { DEFAULT_MODELS, ModelConfig, DEFAULT_SFW_SYSTEM_PROMPT, DEFAULT_NSFW_SYSTEM_PROMPT } from "@/lib/openrouter";
+import { DEFAULT_MODELS, ModelConfig, DEFAULT_SYSTEM_PROMPT } from "@/lib/openrouter";
 
 interface SettingsData {
-    sfwSystemPrompt: string;
-    nsfwSystemPrompt: string;
+    systemPrompt: string;
     maxTokens: number;
     models: ModelConfig[];
 }
 
 export default function SettingsPage() {
     const [settings, setSettings] = useState<SettingsData>({
-        sfwSystemPrompt: DEFAULT_SFW_SYSTEM_PROMPT,
-        nsfwSystemPrompt: DEFAULT_NSFW_SYSTEM_PROMPT,
-        maxTokens: 1024,
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        maxTokens: 512,
         models: DEFAULT_MODELS,
     });
     const [loading, setLoading] = useState(true);
@@ -73,17 +71,16 @@ export default function SettingsPage() {
             try {
                 const parsed = JSON.parse(saved);
                 setSettings({
-                    sfwSystemPrompt: parsed.sfwSystemPrompt || parsed.systemPrompt || DEFAULT_SFW_SYSTEM_PROMPT,
-                    nsfwSystemPrompt: parsed.nsfwSystemPrompt || parsed.systemPrompt || DEFAULT_NSFW_SYSTEM_PROMPT,
-                    maxTokens: parsed.maxTokens || 1024,
+                    systemPrompt: parsed.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+                    maxTokens: parsed.maxTokens || 512,
                     models: parsed.models || DEFAULT_MODELS,
                 });
             } catch {
-                setSettings({ sfwSystemPrompt: DEFAULT_SFW_SYSTEM_PROMPT, nsfwSystemPrompt: DEFAULT_NSFW_SYSTEM_PROMPT, maxTokens: 1024, models: DEFAULT_MODELS });
+                setSettings({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 512, models: DEFAULT_MODELS });
             }
         } else {
             // No saved settings - use defaults
-            setSettings({ sfwSystemPrompt: DEFAULT_SFW_SYSTEM_PROMPT, nsfwSystemPrompt: DEFAULT_NSFW_SYSTEM_PROMPT, maxTokens: 1024, models: DEFAULT_MODELS });
+            setSettings({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 512, models: DEFAULT_MODELS });
         }
         setLoading(false);
         // Mark initial load complete after a short delay
@@ -120,7 +117,7 @@ export default function SettingsPage() {
         }
         setSettings({
             ...settings,
-            models: [...settings.models, { ...newModel, thinkingEnabled: newModel.supportsThinking }],
+            models: [...settings.models, { ...newModel }],
         });
         setNewModel({ id: "", name: "", supportsThinking: false, supportsImage: false });
         toast.success("Model added!");
@@ -138,7 +135,7 @@ export default function SettingsPage() {
         setSettings({
             ...settings,
             models: settings.models.map((m) =>
-                m.id === modelId ? { ...m, thinkingEnabled: !m.thinkingEnabled } : m
+                m.id === modelId ? { ...m, supportsThinking: !m.supportsThinking } : m
             ),
         });
     };
@@ -184,64 +181,36 @@ export default function SettingsPage() {
                     </Button>
                 </motion.div>
 
-                {/* System Prompts - SFW & NSFW */}
+                {/* System Prompt */}
                 <motion.section
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.1 }}
                     className="space-y-4"
                 >
-                    <div className="flex items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-matcha" />
-                        <Label className="text-lg font-semibold">System Prompts</Label>
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Sparkles className="w-5 h-5 text-matcha" />
+                            <Label className="text-lg font-semibold">System Prompt</Label>
+                        </div>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSettings({ ...settings, systemPrompt: DEFAULT_SYSTEM_PROMPT })}
+                            className="text-xs text-zinc-500 hover:text-matcha"
+                        >
+                            Reset to Default
+                        </Button>
                     </div>
-                    <p className="text-xs text-zinc-500">
+                    <Textarea
+                        value={settings.systemPrompt}
+                        onChange={(e) => setSettings({ ...settings, systemPrompt: e.target.value })}
+                        placeholder="Enter a custom system prompt to guide the AI's behavior..."
+                        className="min-h-[200px] rounded-2xl bg-zinc-900/50 border-zinc-800 focus:border-matcha font-mono text-sm"
+                    />
+                    <p className="text-xs text-zinc-600">
                         Use {"{{char}}"} for character name and {"{{user}}"} for user name placeholders.
                     </p>
-                    
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {/* SFW Prompt */}
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <Label className="text-sm font-medium text-lime-400">SFW Prompt</Label>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setSettings({ ...settings, sfwSystemPrompt: DEFAULT_SFW_SYSTEM_PROMPT })}
-                                    className="text-xs text-zinc-500 hover:text-matcha h-6 px-2"
-                                >
-                                    Reset
-                                </Button>
-                            </div>
-                            <Textarea
-                                value={settings.sfwSystemPrompt}
-                                onChange={(e) => setSettings({ ...settings, sfwSystemPrompt: e.target.value })}
-                                placeholder="Enter SFW system prompt..."
-                                className="min-h-[300px] rounded-2xl bg-zinc-900/50 border-zinc-800 focus:border-lime-400 font-mono text-xs"
-                            />
-                        </div>
-                        
-                        {/* NSFW Prompt */}
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <Label className="text-sm font-medium text-red-400">NSFW Prompt</Label>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setSettings({ ...settings, nsfwSystemPrompt: DEFAULT_NSFW_SYSTEM_PROMPT })}
-                                    className="text-xs text-zinc-500 hover:text-matcha h-6 px-2"
-                                >
-                                    Reset
-                                </Button>
-                            </div>
-                            <Textarea
-                                value={settings.nsfwSystemPrompt}
-                                onChange={(e) => setSettings({ ...settings, nsfwSystemPrompt: e.target.value })}
-                                placeholder="Enter NSFW system prompt..."
-                                className="min-h-[300px] rounded-2xl bg-zinc-900/50 border-zinc-800 focus:border-red-400 font-mono text-xs"
-                            />
-                        </div>
-                    </div>
                 </motion.section>
 
                 {/* Max Tokens */}
@@ -256,12 +225,12 @@ export default function SettingsPage() {
                         <Input
                             type="number"
                             value={settings.maxTokens}
-                            onChange={(e) => setSettings({ ...settings, maxTokens: parseInt(e.target.value) || 1024 })}
-                            min={256}
-                            max={8192}
+                            onChange={(e) => setSettings({ ...settings, maxTokens: parseInt(e.target.value) || 512 })}
+                            min={64}
+                            max={4096}
                             className="w-32 rounded-full bg-zinc-900/50 border-zinc-800 focus:border-matcha"
                         />
-                        <span className="text-sm text-zinc-500">tokens (256 - 8192)</span>
+                        <span className="text-sm text-zinc-500">tokens (64 - 4096)</span>
                     </div>
                 </motion.section>
 
@@ -368,7 +337,7 @@ export default function SettingsPage() {
                                                 className="rounded-full text-xs"
                                                 onClick={() => toggleModelThinking(model.id)}
                                             >
-                                                <Brain className={`w-4 h-4 ${model.thinkingEnabled ? "text-purple-400" : "text-zinc-600"}`} />
+                                                <Brain className={`w-4 h-4 ${model.supportsThinking ? "text-purple-400" : "text-zinc-600"}`} />
                                             </Button>
                                         )}
                                         <AlertDialog>
