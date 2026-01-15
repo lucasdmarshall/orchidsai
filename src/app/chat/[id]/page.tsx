@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useMemo, useCallback, memo } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -48,16 +48,12 @@ import {
 } from "lucide-react";
 import { DEFAULT_MODELS, ModelConfig, summarizeContext } from "@/lib/openrouter";
 
-// Parse narration (*text*) vs dialogue ("text")
-// Narration = red/italic, Speech = white
 function parseNarrationContent(content: string): React.ReactNode {
-  // Regex to match *...* or "..."
   const regex = /(\*[^*]+\*)|("[^"]+")/;
   const parts = content.split(regex);
 
   return parts.filter(Boolean).map((part, i) => {
     if (part.startsWith('*') && part.endsWith('*')) {
-      // Narration - red and italic
       return (
         <span key={i} className="text-red-500 italic font-medium">
           {part.slice(1, -1)}
@@ -65,14 +61,12 @@ function parseNarrationContent(content: string): React.ReactNode {
       );
     }
     if (part.startsWith('"') && part.endsWith('"')) {
-      // Speech - bright white
       return (
         <span key={i} className="text-white font-bold">
           {part}
         </span>
       );
     }
-    // Normal text - muted
     return <span key={i} className="text-zinc-400">{part}</span>;
   });
 }
@@ -89,6 +83,7 @@ interface Message {
 export default function ChatPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [character, setCharacter] = useState<any>(null);
   const [persona, setPersona] = useState<any>(null);
   const [allPersonas, setAllPersonas] = useState<any[]>([]);
@@ -101,16 +96,56 @@ export default function ChatPage() {
   const [streamingContent, setStreamingContent] = useState("");
   const [streamingThinking, setStreamingThinking] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [chatId, setChatId] = useState<string | null>(null);
 
-  // New state for model selection and image
   const [models, setModels] = useState<ModelConfig[]>(DEFAULT_MODELS);
   const [selectedModel, setSelectedModel] = useState<ModelConfig>(DEFAULT_MODELS[0]);
   const [imageInput, setImageInput] = useState<string | null>(null);
   const [settings, setSettings] = useState({ systemPrompt: "", maxTokens: 512 });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const saveMessageToDb = async (message: Message, currentChatId: string) => {
+    await supabase.from("messages").insert({
+      chat_id: currentChatId,
+      character_id: params.id as string,
+      persona_id: persona?.id || null,
+      role: message.role,
+      content: message.content,
+    });
+  };
+
+  const createOrGetChat = async (characterId: string, personaId: string | null): Promise<string> => {
+    const existingChatId = searchParams.get("chat");
+    if (existingChatId) {
+      return existingChatId;
+    }
+
+    const { data: existingChat } = await supabase
+      .from("chats")
+      .select("id")
+      .eq("character_id", characterId)
+      .eq("persona_id", personaId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (existingChat) {
+      return existingChat.id;
+    }
+
+    const { data: newChat } = await supabase
+      .from("chats")
+      .insert({
+        character_id: characterId,
+        persona_id: personaId,
+      })
+      .select("id")
+      .single();
+
+    return newChat?.id || crypto.randomUUID();
+  };
+
   useEffect(() => {
-    // Load settings and selected model from localStorage
     const savedSettings = localStorage.getItem("orchids_settings");
     if (savedSettings) {
       try {
@@ -144,32 +179,51 @@ export default function ChatPage() {
         .eq("id", charId)
         .single();
 
-      // Fetch all personas
       const { data: allPersonaData } = await supabase
         .from("personas")
         .select("*")
         .order("created_at", { ascending: false });
 
+      let selectedPersona = null;
       if (allPersonaData && allPersonaData.length > 0) {
         setAllPersonas(allPersonaData);
-        const defaultPersona = allPersonaData.find((p: any) => p.is_default) || allPersonaData[0];
-        setPersona(defaultPersona);
+        selectedPersona = allPersonaData.find((p: any) => p.is_default) || allPersonaData[0];
+        setPersona(selectedPersona);
       }
 
       if (charData) setCharacter(charData);
 
-      setMessages([
-        {
+      const currentChatId = await createOrGetChat(charId, selectedPersona?.id || null);
+      setChatId(currentChatId);
+
+      const { data: savedMessages } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("chat_id", currentChatId)
+        .order("created_at", { ascending: true });
+
+      if (savedMessages && savedMessages.length > 0) {
+        setMessages(savedMessages.map((m: any) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          created_at: m.created_at,
+        })));
+      } else {
+        const greetingMessage: Message = {
           id: "greeting",
           role: "assistant",
           content: charData?.greeting || "Hello!",
           created_at: new Date().toISOString(),
-        },
-      ]);
+        };
+        setMessages([greetingMessage]);
+        await saveMessageToDb(greetingMessage, currentChatId);
+      }
+
       setLoading(false);
     }
     fetchData();
-  }, [params.id]);
+  }, [params.id, searchParams]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -201,115 +255,135 @@ export default function ChatPage() {
     reader.readAsDataURL(file);
   };
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isTyping) return;
+    const handleSend = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!input.trim() || isTyping || !chatId) return;
 
-    const userMessage: Message = {
-      id: Math.random().toString(),
-      role: "user",
-      content: input,
-      image: imageInput || undefined,
-      created_at: new Date().toISOString(),
-    };
-
-    // Build context summary from last 4 messages
-    const contextSummary = messages.length > 4 ? summarizeContext(
-      messages.slice(-4).map(m => ({ role: m.role, content: m.content }))
-    ) : "";
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setImageInput(null);
-    setIsTyping(true);
-    setStreamingContent("");
-    setStreamingThinking("");
-
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: [{ role: "user", content: input, image: imageInput }],
-          model: selectedModel.id,
-          maxTokens: settings.maxTokens,
-          systemPrompt: settings.systemPrompt,
-          characterName: character?.name,
-          characterPersonality: character?.personality,
-          userPersona: persona ? `${persona.name}: ${persona.personality || ""}` : undefined,
-          contextSummary,
-        }),
-      });
-
-      if (!response.ok) throw new Error("API request failed");
-
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("No response body");
-
-      const decoder = new TextDecoder();
-      let fullContent = "";
-      let fullThinking = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n").filter(Boolean);
-
-        for (const line of lines) {
-          try {
-            const parsed = JSON.parse(line);
-            if (parsed.content) {
-              fullContent += parsed.content;
-              setStreamingContent(parsed.fullContent || fullContent);
-            }
-            if (parsed.thinking) {
-              fullThinking = parsed.thinking;
-              setStreamingThinking(fullThinking);
-            }
-          } catch { }
-        }
-      }
-
-      const aiMessage: Message = {
+      const userMessage: Message = {
         id: Math.random().toString(),
-        role: "assistant",
-        content: fullContent || "I apologize, I couldn't generate a response.",
-        thinking: fullThinking || undefined,
+        role: "user",
+        content: input,
+        image: imageInput || undefined,
         created_at: new Date().toISOString(),
       };
-      setMessages((prev) => [...prev, aiMessage]);
-    } catch (error) {
-      console.error("Chat error:", error);
-      toast.error("Failed to get response. Please try again.");
-      const fallbackMessage: Message = {
-        id: Math.random().toString(),
-        role: "assistant",
-        content: "I'm having trouble connecting right now. Please try again.",
-        created_at: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, fallbackMessage]);
-    } finally {
-      setIsTyping(false);
+
+      const contextSummary = messages.length > 4 ? summarizeContext(
+        messages.slice(-4).map(m => ({ role: m.role, content: m.content }))
+      ) : "";
+
+      setMessages((prev) => [...prev, userMessage]);
+      setInput("");
+      setImageInput(null);
+      setIsTyping(true);
       setStreamingContent("");
       setStreamingThinking("");
-    }
-  };
 
-  const startNewChat = () => {
-    setMessages([
-      {
+      await saveMessageToDb(userMessage, chatId);
+
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: [{ role: "user", content: input, image: imageInput }],
+            model: selectedModel.id,
+            maxTokens: settings.maxTokens,
+            systemPrompt: settings.systemPrompt,
+            characterName: character?.name,
+            characterPersonality: character?.personality,
+            userPersona: persona ? `${persona.name}: ${persona.personality || ""}` : undefined,
+            contextSummary,
+          }),
+        });
+
+        if (!response.ok) throw new Error("API request failed");
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("No response body");
+
+        const decoder = new TextDecoder();
+        let fullContent = "";
+        let fullThinking = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n").filter(Boolean);
+
+          for (const line of lines) {
+            try {
+              const parsed = JSON.parse(line);
+              if (parsed.content) {
+                fullContent += parsed.content;
+                setStreamingContent(parsed.fullContent || fullContent);
+              }
+              if (parsed.thinking) {
+                fullThinking = parsed.thinking;
+                setStreamingThinking(fullThinking);
+              }
+            } catch { }
+          }
+        }
+
+        const aiMessage: Message = {
+          id: Math.random().toString(),
+          role: "assistant",
+          content: fullContent || "I apologize, I couldn't generate a response.",
+          thinking: fullThinking || undefined,
+          created_at: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, aiMessage]);
+        await saveMessageToDb(aiMessage, chatId);
+
+        await supabase.from("chats").update({ updated_at: new Date().toISOString() }).eq("id", chatId);
+      } catch (error) {
+        console.error("Chat error:", error);
+        toast.error("Failed to get response. Please try again.");
+        const fallbackMessage: Message = {
+          id: Math.random().toString(),
+          role: "assistant",
+          content: "I'm having trouble connecting right now. Please try again.",
+          created_at: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, fallbackMessage]);
+      } finally {
+        setIsTyping(false);
+        setStreamingContent("");
+        setStreamingThinking("");
+      }
+    };
+
+  const startNewChat = async () => {
+    const { data: newChat } = await supabase
+      .from("chats")
+      .insert({
+        character_id: params.id as string,
+        persona_id: persona?.id || null,
+      })
+      .select("id")
+      .single();
+
+    if (newChat) {
+      setChatId(newChat.id);
+      const greetingMessage: Message = {
         id: "greeting",
         role: "assistant",
         content: character?.greeting || "Hello!",
         created_at: new Date().toISOString(),
-      },
-    ]);
-    toast.success("Started a new chat!");
+      };
+      setMessages([greetingMessage]);
+      await saveMessageToDb(greetingMessage, newChat.id);
+      toast.success("Started a new chat!");
+    }
   };
 
-  const deleteChat = () => {
+  const deleteChat = async () => {
+    if (chatId) {
+      await supabase.from("messages").delete().eq("chat_id", chatId);
+      await supabase.from("chats").delete().eq("id", chatId);
+    }
     setShowDeleteDialog(false);
     toast.success("Chat deleted!");
     router.push("/");
