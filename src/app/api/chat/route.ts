@@ -3,25 +3,20 @@ import { NextRequest } from "next/server";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    const userInput = encodeURIComponent(body.message || "");
 
-    const response = await fetch("http://72.62.244.137:8000/chat/stream", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
+    const response = await fetch(`http://72.62.244.137:8000/rp?user_input=${userInput}`, {
+      method: "GET",
     });
 
     if (!response.ok) {
       return new Response("AI API error", { status: response.status });
     }
 
-    // Proxy the stream
     return new Response(response.body, {
       headers: {
-        "Content-Type": "text/event-stream",
+        "Content-Type": "text/plain",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
       },
     });
   } catch (error) {
