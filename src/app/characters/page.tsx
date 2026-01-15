@@ -41,7 +41,10 @@ import {
   Trash2,
   MessageSquare,
   Sparkles,
+  Shield,
+  ShieldAlert,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Character {
   id: string;
@@ -51,6 +54,7 @@ interface Character {
   personality: string;
   avatar_url: string;
   created_at: string;
+  content_rating?: "sfw" | "nsfw";
 }
 
 export default function CharactersPage() {
@@ -97,6 +101,7 @@ export default function CharactersPage() {
         title: editCharacter.title,
         greeting: editCharacter.greeting,
         personality: editCharacter.personality,
+        content_rating: editCharacter.content_rating || "sfw",
       })
       .eq("id", editCharacter.id);
 
@@ -275,7 +280,7 @@ export default function CharactersPage() {
       </AlertDialog>
 
       <Dialog open={!!editCharacter} onOpenChange={() => setEditCharacter(null)}>
-        <DialogContent className="bg-zinc-900 border-zinc-800 max-w-lg">
+        <DialogContent className="bg-zinc-900 border-zinc-800 max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Pencil className="w-5 h-5 text-matcha" />
@@ -329,6 +334,41 @@ export default function CharactersPage() {
                   }
                   className="rounded-2xl bg-zinc-800/50 border-zinc-700 min-h-[100px]"
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>Content Rating</Label>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditCharacter({ ...editCharacter, content_rating: "sfw" })
+                    }
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-full font-semibold transition-all",
+                      editCharacter.content_rating !== "nsfw"
+                        ? "bg-lime-500 text-black"
+                        : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                    )}
+                  >
+                    <Shield className="w-4 h-4" />
+                    SFW
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditCharacter({ ...editCharacter, content_rating: "nsfw" })
+                    }
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-full font-semibold transition-all",
+                      editCharacter.content_rating === "nsfw"
+                        ? "bg-red-500 text-white"
+                        : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                    )}
+                  >
+                    <ShieldAlert className="w-4 h-4" />
+                    NSFW
+                  </button>
+                </div>
               </div>
               <div className="flex gap-2 justify-end">
                 <Button
