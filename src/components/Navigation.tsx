@@ -2,19 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PlusCircle, MessageSquare, User, Home, UserCircle } from "lucide-react";
+import { PlusCircle, MessageSquare, User, Home, UserCircle, Users, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 
 export function Navigation() {
   const pathname = usePathname();
 
-  const navItems = [
-    { href: "/", icon: Home, label: "Home" },
-    { href: "/chats", icon: MessageSquare, label: "Chats" },
-    { href: "/create/character", icon: PlusCircle, label: "Character" },
-    { href: "/create/persona", icon: User, label: "Persona" },
-    { href: "/profile", icon: UserCircle, label: "Profile" },
+const navItems = [
+    { icon: Home, label: "Home", href: "/" },
+    { icon: MessageSquare, label: "Chats", href: "/chats" },
+    { icon: Users, label: "Characters", href: "/characters" },
+    { icon: User, label: "Persona", href: "/create/persona" },
+    { icon: Settings, label: "Settings", href: "/settings" },
   ];
 
   return (
