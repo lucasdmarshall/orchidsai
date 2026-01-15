@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
@@ -31,7 +31,6 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
   Plus,
@@ -44,30 +43,8 @@ import {
   Sparkles,
   Shield,
   ShieldAlert,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const TAGS = [
-  "All",
-  "Anime",
-  "Game",
-  "Fantasy",
-  "Sci-Fi",
-  "Romance",
-  "Action",
-  "Comedy",
-  "Horror",
-  "Mystery",
-  "Historical",
-  "Slice of Life",
-  "Adventure",
-  "Drama",
-];
-
-const ITEMS_PER_PAGE = 12;
 
 interface Character {
   id: string;
@@ -78,7 +55,6 @@ interface Character {
   avatar_url: string;
   created_at: string;
   content_rating?: "sfw" | "nsfw";
-  tags?: string[];
 }
 
 export default function CharactersPage() {
@@ -89,21 +65,10 @@ export default function CharactersPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editCharacter, setEditCharacter] = useState<Character | null>(null);
   const [editLoading, setEditLoading] = useState(false);
-  const [showNsfw, setShowNsfw] = useState(false);
-  const [selectedTag, setSelectedTag] = useState("All");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const tagScrollRef = useRef<HTMLDivElement>(null);
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const loadMoreRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchCharacters();
   }, []);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search, showNsfw, selectedTag]);
 
   const fetchCharacters = async () => {
     const { data } = await supabase
@@ -112,16 +77,6 @@ export default function CharactersPage() {
       .order("created_at", { ascending: false });
     if (data) setCharacters(data);
     setLoading(false);
-  };
-
-  const scrollTags = (direction: "left" | "right") => {
-    if (tagScrollRef.current) {
-      const scrollAmount = 200;
-      tagScrollRef.current.scrollBy({
-        left: direction === "left" ? -scrollAmount : scrollAmount,
-        behavior: "smooth",
-      });
-    }
   };
 
   const handleDelete = async () => {
@@ -162,55 +117,11 @@ export default function CharactersPage() {
     setEditLoading(false);
   };
 
-  const filteredCharacters = characters.filter((c) => {
-    const matchesSearch =
+  const filteredCharacters = characters.filter(
+    (c) =>
       c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.title.toLowerCase().includes(search.toLowerCase());
-    const matchesRating = showNsfw || c.content_rating !== "nsfw";
-    const matchesTag =
-      selectedTag === "All" ||
-      (c.tags && c.tags.includes(selectedTag)) ||
-      c.title.toLowerCase().includes(selectedTag.toLowerCase());
-    return matchesSearch && matchesRating && matchesTag;
-  });
-
-  const totalPages = Math.ceil(filteredCharacters.length / ITEMS_PER_PAGE);
-  const paginatedCharacters = filteredCharacters.slice(
-    0,
-    currentPage * ITEMS_PER_PAGE
+      c.title.toLowerCase().includes(search.toLowerCase())
   );
-  const hasMore = paginatedCharacters.length < filteredCharacters.length;
-
-  const loadMore = useCallback(() => {
-    if (hasMore && !loadingMore) {
-      setLoadingMore(true);
-      setTimeout(() => {
-        setCurrentPage((prev) => prev + 1);
-        setLoadingMore(false);
-      }, 300);
-    }
-  }, [hasMore, loadingMore]);
-
-  useEffect(() => {
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          loadMore();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (loadMoreRef.current) {
-      observerRef.current.observe(loadMoreRef.current);
-    }
-
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, [loadMore]);
 
   return (
     <main className="min-h-screen px-6 py-12 max-w-6xl mx-auto pb-32">
@@ -233,62 +144,14 @@ export default function CharactersPage() {
           </Button>
         </div>
 
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="relative flex-1 min-w-[200px] max-w-md">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4" />
-            <Input
-              placeholder="Search characters..."
-              className="pl-11 rounded-full bg-zinc-900/50 border-zinc-800"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <div className="flex items-center gap-2 bg-zinc-900/50 border border-zinc-800 rounded-full px-4 py-2">
-            <Shield className={cn("w-4 h-4", !showNsfw ? "text-lime-500" : "text-zinc-500")} />
-            <span className="text-sm text-zinc-400">SFW</span>
-            <Switch
-              checked={showNsfw}
-              onCheckedChange={setShowNsfw}
-              className="data-[state=checked]:bg-red-500"
-            />
-            <span className="text-sm text-zinc-400">NSFW</span>
-            <ShieldAlert className={cn("w-4 h-4", showNsfw ? "text-red-500" : "text-zinc-500")} />
-          </div>
-        </div>
-
-        <div className="relative">
-          <button
-            onClick={() => scrollTags("left")}
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-gradient-to-r from-zinc-950 to-transparent pr-6 py-2"
-          >
-            <ChevronLeft className="w-5 h-5 text-zinc-400 hover:text-white transition-colors" />
-          </button>
-          <div
-            ref={tagScrollRef}
-            className="flex gap-2 overflow-x-auto scrollbar-hide px-8 py-2"
-            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-          >
-            {TAGS.map((tag) => (
-              <button
-                key={tag}
-                onClick={() => setSelectedTag(tag)}
-                className={cn(
-                  "px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all",
-                  selectedTag === tag
-                    ? "bg-matcha text-black"
-                    : "bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700 hover:text-white"
-                )}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={() => scrollTags("right")}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-gradient-to-l from-zinc-950 to-transparent pl-6 py-2"
-          >
-            <ChevronRight className="w-5 h-5 text-zinc-400 hover:text-white transition-colors" />
-          </button>
+        <div className="relative max-w-md">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4" />
+          <Input
+            placeholder="Search characters..."
+            className="pl-11 rounded-full bg-zinc-900/50 border-zinc-800"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
 
         {loading ? (

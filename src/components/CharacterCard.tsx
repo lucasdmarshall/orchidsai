@@ -23,53 +23,53 @@ interface CharacterCardProps {
 export function CharacterCard({ id, name, title, avatar_url, content_rating, tags }: CharacterCardProps) {
   return (
     <motion.div
-      whileHover={{ y: -5, scale: 1.02 }}
-      className="group relative bg-white dark:bg-zinc-900 rounded-[2.5rem] p-4 border border-zinc-200 dark:border-zinc-800 overflow-hidden cursor-pointer shadow-lg hover:shadow-matcha/20 transition-all"
+      whileHover={{ y: -4, scale: 1.02 }}
+      className="group relative bg-zinc-900/80 rounded-2xl overflow-hidden cursor-pointer border border-zinc-800 hover:border-matcha/50 transition-all"
     >
       <Link href={`/chat/${id}`}>
-        <div className="relative aspect-square rounded-[2rem] overflow-hidden mb-4 bg-zinc-100 dark:bg-zinc-800">
+        <div className="relative aspect-[3/4] overflow-hidden bg-zinc-800">
           <Image
             src={avatar_url || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=400&h=400&auto=format&fit=crop"}
             alt={name}
             fill
-            className="object-cover group-hover:scale-110 transition-transform duration-500"
+            className="object-cover group-hover:scale-105 transition-transform duration-300"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
           
           {content_rating === "nsfw" && (
-            <div className="absolute top-2 left-2 bg-red-500/90 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+            <div className="absolute top-2 left-2 bg-red-500/90 text-white px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1">
               <ShieldAlert className="w-3 h-3" />
-              NSFW
+              18+
             </div>
           )}
-        </div>
-        
-        <div className="space-y-2">
-          <h3 className="text-lg font-bold truncate group-hover:text-matcha transition-colors">{name}</h3>
-          <p className="text-xs text-zinc-500 truncate">{title}</p>
-          
-          {tags && tags.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {tags.slice(0, 3).map((tag) => (
-                <span
-                  key={tag.id}
-                  style={{ backgroundColor: tag.color }}
-                  className="px-2 py-0.5 rounded-full text-[10px] font-medium text-white"
-                >
-                  {tag.name}
-                </span>
-              ))}
-              {tags.length > 3 && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-700 text-zinc-300">
-                  +{tags.length - 3}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
 
-        <div className="absolute bottom-4 right-4 bg-matcha text-black p-3 rounded-full opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 transition-all shadow-xl">
-          <MessageSquare className="w-5 h-5" />
+          <div className="absolute bottom-0 left-0 right-0 p-3">
+            <h3 className="text-sm font-bold text-white truncate">{name}</h3>
+            <p className="text-[11px] text-zinc-400 truncate">{title}</p>
+            
+            {tags && tags.length > 0 && (
+              <div className="flex gap-1 mt-1.5 overflow-hidden">
+                {tags.slice(0, 2).map((tag) => (
+                  <span
+                    key={tag.id}
+                    style={{ backgroundColor: `${tag.color}CC` }}
+                    className="px-1.5 py-0.5 rounded text-[9px] font-medium text-white"
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+                {tags.length > 2 && (
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-zinc-700/80 text-zinc-300">
+                    +{tags.length - 2}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="absolute top-2 right-2 bg-matcha text-black p-2 rounded-full opacity-0 group-hover:opacity-100 transform scale-75 group-hover:scale-100 transition-all shadow-lg">
+            <MessageSquare className="w-4 h-4" />
+          </div>
         </div>
       </Link>
     </motion.div>
