@@ -117,6 +117,17 @@ export async function callOpenRouter(
   return response;
 }
 
+export function replacePlaceholders(
+  text: string,
+  charName: string,
+  userName: string
+): string {
+  if (!text) return text;
+  return text
+    .replace(/\{\{char\}\}/gi, charName || "Character")
+    .replace(/\{\{user\}\}/gi, userName || "User");
+}
+
 // Parse thinking content from response
 export function parseThinkingContent(content: string): { thinking: string | null; response: string } {
   const thinkMatch = content.match(/<think>([\s\S]*?)<\/think>/);

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { callOpenRouter, parseThinkingContent, ChatMessage, DEFAULT_SYSTEM_PROMPT } from "@/lib/openrouter";
+import { callOpenRouter, parseThinkingContent, ChatMessage, DEFAULT_SYSTEM_PROMPT, replacePlaceholders } from "@/lib/openrouter";
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,23 +20,30 @@ export async function POST(req: NextRequest) {
     // Build the comprehensive roleplay system prompt
     const basePrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
     
+    // Extract user name from persona
+    const userName = userPersona?.split(":")[0]?.trim() || "User";
+    const charName = characterName || "Character";
+    
+    // Replace placeholders in all character fields
+    const processedPersonality = replacePlaceholders(characterPersonality || "", charName, userName);
+    const processedScenario = replacePlaceholders(characterScenario || "", charName, userName);
+    const processedExampleDialogue = replacePlaceholders(characterExampleDialogue || "", charName, userName);
+    
     // Replace placeholders and build character context
-    let systemContent = basePrompt
-      .replace(/\{\{char\}\}/gi, characterName || "the character")
-      .replace(/\{\{user\}\}/gi, userPersona?.split(":")[0]?.trim() || "the user");
+    let systemContent = replacePlaceholders(basePrompt, charName, userName);
 
     // Add character definition block
     if (characterName) {
       systemContent += `\n\n### CHARACTER DEFINITION:
-**Name:** ${characterName}
-**Personality:** ${characterPersonality || "Not specified"}`;
+**Name:** ${charName}
+**Personality:** ${processedPersonality || "Not specified"}`;
       
-      if (characterScenario) {
-        systemContent += `\n**Scenario:** ${characterScenario}`;
+      if (processedScenario) {
+        systemContent += `\n**Scenario:** ${processedScenario}`;
       }
       
-      if (characterExampleDialogue) {
-        systemContent += `\n**Example Dialogue Style:**\n${characterExampleDialogue}`;
+      if (processedExampleDialogue) {
+        systemContent += `\n**Example Dialogue Style:**\n${processedExampleDialogue}`;
       }
     }
 
@@ -49,10 +56,7 @@ ${userPersona}
 
     // Add conversation context summary for continuity (last 2 messages)
     if (contextSummary) {
-      // Replace placeholders in context summary too
-      const formattedContext = contextSummary
-        .replace(/\{\{char\}\}/gi, characterName || "Character")
-        .replace(/\{\{user\}\}/gi, userPersona?.split(":")[0]?.trim() || "User");
+      const formattedContext = replacePlaceholders(contextSummary, charName, userName);
       
       systemContent += `\n\n### RECENT CONTEXT (last 4 exchanges):
 ${formattedContext}

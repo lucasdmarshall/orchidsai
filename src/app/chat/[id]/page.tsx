@@ -46,7 +46,7 @@ import {
   Check,
   Users
 } from "lucide-react";
-import { DEFAULT_MODELS, ModelConfig, summarizeContext, DEFAULT_SYSTEM_PROMPT } from "@/lib/openrouter";
+import { DEFAULT_MODELS, ModelConfig, summarizeContext, DEFAULT_SYSTEM_PROMPT, replacePlaceholders } from "@/lib/openrouter";
 
 function parseNarrationContent(content: string): React.ReactNode {
   const regex = /(\*[^*]+\*)|("[^"]+")/;
@@ -202,23 +202,26 @@ export default function ChatPage() {
         .eq("chat_id", currentChatId)
         .order("created_at", { ascending: true });
 
-      if (savedMessages && savedMessages.length > 0) {
-        setMessages(savedMessages.map((m: any) => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          created_at: m.created_at,
-        })));
-      } else {
-        const greetingMessage: Message = {
-          id: "greeting",
-          role: "assistant",
-          content: charData?.greeting || "Hello!",
-          created_at: new Date().toISOString(),
-        };
-        setMessages([greetingMessage]);
-        await saveMessageToDb(greetingMessage, currentChatId);
-      }
+        if (savedMessages && savedMessages.length > 0) {
+          setMessages(savedMessages.map((m: any) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            created_at: m.created_at,
+          })));
+        } else {
+          const userName = selectedPersona?.name || "User";
+          const charName = charData?.name || "Character";
+          const processedGreeting = replacePlaceholders(charData?.greeting || "Hello!", charName, userName);
+          const greetingMessage: Message = {
+            id: "greeting",
+            role: "assistant",
+            content: processedGreeting,
+            created_at: new Date().toISOString(),
+          };
+          setMessages([greetingMessage]);
+          await saveMessageToDb(greetingMessage, currentChatId);
+        }
 
       setLoading(false);
     }
@@ -381,17 +384,20 @@ export default function ChatPage() {
       .single();
 
     if (newChat) {
-      setChatId(newChat.id);
-      const greetingMessage: Message = {
-        id: "greeting",
-        role: "assistant",
-        content: character?.greeting || "Hello!",
-        created_at: new Date().toISOString(),
-      };
-      setMessages([greetingMessage]);
-      await saveMessageToDb(greetingMessage, newChat.id);
-      toast.success("Started a new chat!");
-    }
+        setChatId(newChat.id);
+        const userName = persona?.name || "User";
+        const charName = character?.name || "Character";
+        const processedGreeting = replacePlaceholders(character?.greeting || "Hello!", charName, userName);
+        const greetingMessage: Message = {
+          id: "greeting",
+          role: "assistant",
+          content: processedGreeting,
+          created_at: new Date().toISOString(),
+        };
+        setMessages([greetingMessage]);
+        await saveMessageToDb(greetingMessage, newChat.id);
+        toast.success("Started a new chat!");
+      }
   };
 
   const deleteChat = async () => {
