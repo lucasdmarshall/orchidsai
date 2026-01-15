@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
@@ -43,8 +43,18 @@ import {
   Sparkles,
   Shield,
   ShieldAlert,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+interface Tag {
+  id: string;
+  name: string;
+  color: string;
+  slug: string;
+  type: string;
+}
 
 interface Character {
   id: string;
@@ -55,6 +65,7 @@ interface Character {
   avatar_url: string;
   created_at: string;
   content_rating?: "sfw" | "nsfw";
+  tags?: Tag[];
 }
 
 export default function CharactersPage() {
@@ -65,17 +76,53 @@ export default function CharactersPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editCharacter, setEditCharacter] = useState<Character | null>(null);
   const [editLoading, setEditLoading] = useState(false);
+  const [contentFilter, setContentFilter] = useState<"all" | "sfw" | "nsfw">("all");
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const tagsContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    async function fetchTags() {
+      const { data } = await supabase
+        .from("tags")
+        .select("*")
+        .neq("type", "content_rating")
+        .order("name");
+      if (data) setTags(data);
+    }
+    fetchTags();
+  }, []);
 
   useEffect(() => {
     fetchCharacters();
   }, []);
 
   const fetchCharacters = async () => {
-    const { data } = await supabase
+    const { data: chars } = await supabase
       .from("characters")
       .select("*")
       .order("created_at", { ascending: false });
-    if (data) setCharacters(data);
+
+    if (chars) {
+      const { data: characterTags } = await supabase
+        .from("character_tags")
+        .select("character_id, tags(id, name, color, slug, type)")
+        .in("character_id", chars.map((c) => c.id));
+
+      const tagsByCharacter = new Map<string, Tag[]>();
+      characterTags?.forEach((ct: { character_id: string; tags: Tag }) => {
+        const existing = tagsByCharacter.get(ct.character_id) || [];
+        if (ct.tags) existing.push(ct.tags);
+        tagsByCharacter.set(ct.character_id, existing);
+      });
+
+      const enrichedChars = chars.map((char) => ({
+        ...char,
+        tags: tagsByCharacter.get(char.id) || [],
+      }));
+
+      setCharacters(enrichedChars);
+    }
     setLoading(false);
   };
 
@@ -83,6 +130,7 @@ export default function CharactersPage() {
     if (!deleteId) return;
     await supabase.from("messages").delete().eq("character_id", deleteId);
     await supabase.from("chats").delete().eq("character_id", deleteId);
+    await supabase.from("character_tags").delete().eq("character_id", deleteId);
     await supabase.from("characters").delete().eq("id", deleteId);
     setCharacters(characters.filter((c) => c.id !== deleteId));
     setDeleteId(null);
@@ -117,11 +165,31 @@ export default function CharactersPage() {
     setEditLoading(false);
   };
 
-  const filteredCharacters = characters.filter(
-    (c) =>
+  const scrollTags = (direction: "left" | "right") => {
+    if (tagsContainerRef.current) {
+      const scrollAmount = 200;
+      tagsContainerRef.current.scrollBy({
+        left: direction === "left" ? -scrollAmount : scrollAmount,
+        behavior: "smooth"
+      });
+    }
+  };
+
+  const filteredCharacters = characters.filter((c) => {
+    const matchesSearch =
       c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.title.toLowerCase().includes(search.toLowerCase())
-  );
+      c.title.toLowerCase().includes(search.toLowerCase());
+
+    const matchesContent =
+      contentFilter === "all" ||
+      (contentFilter === "sfw" && c.content_rating !== "nsfw") ||
+      (contentFilter === "nsfw" && c.content_rating === "nsfw");
+
+    const matchesTag =
+      !selectedTag || c.tags?.some((t) => t.slug === selectedTag);
+
+    return matchesSearch && matchesContent && matchesTag;
+  });
 
   return (
     <main className="min-h-screen px-6 py-12 max-w-6xl mx-auto pb-32">
@@ -144,14 +212,103 @@ export default function CharactersPage() {
           </Button>
         </div>
 
-        <div className="relative max-w-md">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4" />
-          <Input
-            placeholder="Search characters..."
-            className="pl-11 rounded-full bg-zinc-900/50 border-zinc-800"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="flex flex-col sm:flex-row gap-4 items-center">
+          <div className="relative flex-1 w-full group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-matcha transition-colors w-4 h-4" />
+            <Input
+              placeholder="Search characters..."
+              className="pl-11 h-11 rounded-full bg-zinc-900/50 border-zinc-800 focus:border-matcha focus:ring-matcha transition-all"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="flex bg-zinc-900/50 rounded-full p-1 border border-zinc-800">
+            <button
+              onClick={() => setContentFilter("all")}
+              className={cn(
+                "px-4 py-2 rounded-full text-sm font-medium transition-all",
+                contentFilter === "all"
+                  ? "bg-zinc-700 text-white"
+                  : "text-zinc-400 hover:text-white"
+              )}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setContentFilter("sfw")}
+              className={cn(
+                "px-4 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-1.5",
+                contentFilter === "sfw"
+                  ? "bg-lime-500 text-black"
+                  : "text-zinc-400 hover:text-white"
+              )}
+            >
+              <Shield className="w-3.5 h-3.5" />
+              SFW
+            </button>
+            <button
+              onClick={() => setContentFilter("nsfw")}
+              className={cn(
+                "px-4 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-1.5",
+                contentFilter === "nsfw"
+                  ? "bg-red-500 text-white"
+                  : "text-zinc-400 hover:text-white"
+              )}
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              NSFW
+            </button>
+          </div>
+        </div>
+
+        <div className="relative">
+          <button
+            onClick={() => scrollTags("left")}
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-zinc-900/90 hover:bg-zinc-800 p-1.5 rounded-full border border-zinc-700 transition-colors"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          
+          <div 
+            ref={tagsContainerRef}
+            className="flex gap-2 overflow-x-auto scrollbar-hide px-8 py-2"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
+            <button
+              onClick={() => setSelectedTag(null)}
+              className={cn(
+                "px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all border",
+                !selectedTag
+                  ? "bg-matcha text-black border-matcha"
+                  : "bg-zinc-900/50 text-zinc-400 border-zinc-800 hover:border-zinc-600"
+              )}
+            >
+              All Tags
+            </button>
+            {tags.map((tag) => (
+              <button
+                key={tag.id}
+                onClick={() => setSelectedTag(selectedTag === tag.slug ? null : tag.slug)}
+                className={cn(
+                  "px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all border",
+                  selectedTag === tag.slug
+                    ? "text-white border-transparent"
+                    : "bg-zinc-900/50 text-zinc-400 border-zinc-800 hover:border-zinc-600"
+                )}
+                style={selectedTag === tag.slug ? { backgroundColor: tag.color } : {}}
+              >
+                {tag.name}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => scrollTags("right")}
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-zinc-900/90 hover:bg-zinc-800 p-1.5 rounded-full border border-zinc-700 transition-colors"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
 
         {loading ? (
@@ -166,7 +323,7 @@ export default function CharactersPage() {
         ) : filteredCharacters.length === 0 ? (
           <div className="text-center py-20 space-y-4">
             <Users className="w-16 h-16 text-zinc-700 mx-auto" />
-            <p className="text-zinc-500 text-lg">No characters yet</p>
+            <p className="text-zinc-500 text-lg">No characters found</p>
             <Button
               onClick={() => router.push("/create/character")}
               className="rounded-full bg-matcha hover:bg-matcha-dark text-black"
@@ -187,12 +344,19 @@ export default function CharactersPage() {
                   className="group relative bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4 hover:border-matcha/50 transition-all"
                 >
                   <div className="flex items-start gap-4">
-                    <Avatar className="w-14 h-14 ring-2 ring-zinc-800">
-                      <AvatarImage src={char.avatar_url} />
-                      <AvatarFallback className="bg-zinc-800 text-lg">
-                        {char.name[0]}
-                      </AvatarFallback>
-                    </Avatar>
+                    <div className="relative">
+                      <Avatar className="w-14 h-14 ring-2 ring-zinc-800">
+                        <AvatarImage src={char.avatar_url} />
+                        <AvatarFallback className="bg-zinc-800 text-lg">
+                          {char.name[0]}
+                        </AvatarFallback>
+                      </Avatar>
+                      {char.content_rating === "nsfw" && (
+                        <div className="absolute -top-1 -right-1 bg-red-500 text-white px-1 py-0.5 rounded text-[8px] font-bold">
+                          18+
+                        </div>
+                      )}
+                    </div>
 
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-white truncate">
@@ -204,6 +368,24 @@ export default function CharactersPage() {
                       <p className="text-xs text-zinc-600 mt-2 line-clamp-2">
                         {char.personality}
                       </p>
+                      {char.tags && char.tags.length > 0 && (
+                        <div className="flex gap-1 mt-2 flex-wrap">
+                          {char.tags.slice(0, 3).map((tag, idx) => (
+                            <span
+                              key={`${char.id}-${tag.id}-${idx}`}
+                              style={{ backgroundColor: `${tag.color}CC` }}
+                              className="px-1.5 py-0.5 rounded text-[9px] font-medium text-white"
+                            >
+                              {tag.name}
+                            </span>
+                          ))}
+                          {char.tags.length > 3 && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-zinc-700/80 text-zinc-300">
+                              +{char.tags.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <DropdownMenu>
