@@ -140,20 +140,7 @@ export default function ChatPage() {
         throw new Error("API request failed");
       }
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let fullContent = "";
-
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          const chunk = decoder.decode(value, { stream: true });
-          fullContent += chunk;
-          setStreamingContent(fullContent);
-        }
-      }
+      const fullContent = await response.text();
 
       const aiMessage: Message = {
         id: Math.random().toString(),
