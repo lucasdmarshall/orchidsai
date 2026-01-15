@@ -34,14 +34,14 @@ export interface ModelConfig {
 }
 
 export const DEFAULT_MODELS: ModelConfig[] = [
-  { id: "deepseek/deepseek-v3:free", name: "DeepSeek V3", supportsThinking: false, thinkingEnabled: false, supportsImage: false },
-  { id: "deepseek/deepseek-r1:free", name: "DeepSeek R1", supportsThinking: true, thinkingEnabled: true, supportsImage: false },
-  { id: "google/gemini-2.5-pro:free", name: "Gemini 2.5 Pro", supportsThinking: false, thinkingEnabled: false, supportsImage: true },
-  { id: "meta-llama/llama-4-scout:free", name: "Llama 4 Scout", supportsThinking: false, thinkingEnabled: false, supportsImage: true },
-  { id: "mistralai/mistral-small-24b-instruct-2501:free", name: "Mistral Small", supportsThinking: false, thinkingEnabled: false, supportsImage: false },
+  { id: "deepseek/deepseek-r1-0528:free", name: "DeepSeek R1", supportsThinking: true, thinkingEnabled: true, supportsImage: false },
+  { id: "google/gemini-2.0-flash-exp:free", name: "Gemini 2.0 Flash", supportsThinking: false, thinkingEnabled: false, supportsImage: true },
+  { id: "meta-llama/llama-3.3-70b-instruct:free", name: "Llama 3.3 70B", supportsThinking: false, thinkingEnabled: false, supportsImage: true },
   { id: "xiaomi/mimo-v2-flash:free", name: "MiMo-V2-Flash", supportsThinking: true, thinkingEnabled: true, supportsImage: false },
-  { id: "mistralai/devstral-2:free", name: "Devstral 2", supportsThinking: false, thinkingEnabled: false, supportsImage: false },
-  { id: "qwen/qwq-32b:free", name: "Qwen QwQ 32B", supportsThinking: true, thinkingEnabled: true, supportsImage: false },
+  { id: "mistralai/devstral-2512:free", name: "Devstral 2", supportsThinking: false, thinkingEnabled: false, supportsImage: false },
+  { id: "google/gemma-3-27b-it:free", name: "Gemma 3 27B", supportsThinking: false, thinkingEnabled: false, supportsImage: true },
+  { id: "qwen/qwen-2.5-vl-7b-instruct:free", name: "Qwen 2.5 VL", supportsThinking: false, thinkingEnabled: false, supportsImage: true },
+  { id: "tngtech/deepseek-r1t-chimera:free", name: "Thinking R1T", supportsThinking: true, thinkingEnabled: true, supportsImage: false },
 ];
 
 export const DEFAULT_SFW_SYSTEM_PROMPT = `### ROLEPLAY INSTRUCTIONS FOR {{char}}

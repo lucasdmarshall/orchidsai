@@ -6,7 +6,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
       const {
         messages,
-        model = "deepseek/deepseek-v3:free",
+        model = "deepseek/deepseek-r1-0528:free",
         maxTokens = 1024,
       sfwSystemPrompt,
       nsfwSystemPrompt,
