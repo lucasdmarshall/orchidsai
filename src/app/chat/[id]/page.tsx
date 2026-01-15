@@ -43,7 +43,8 @@ import {
   Brain,
   ChevronDown,
   Sparkles,
-  Check
+  Check,
+  Users
 } from "lucide-react";
 import { DEFAULT_MODELS, ModelConfig, summarizeContext } from "@/lib/openrouter";
 
@@ -90,6 +91,7 @@ export default function ChatPage() {
   const router = useRouter();
   const [character, setCharacter] = useState<any>(null);
   const [persona, setPersona] = useState<any>(null);
+  const [allPersonas, setAllPersonas] = useState<any[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
@@ -142,21 +144,16 @@ export default function ChatPage() {
         .eq("id", charId)
         .single();
 
-      const { data: personaData } = await supabase
+      // Fetch all personas
+      const { data: allPersonaData } = await supabase
         .from("personas")
         .select("*")
-        .eq("is_default", true)
-        .limit(1);
+        .order("created_at", { ascending: false });
 
-      if (!personaData || personaData.length === 0) {
-        const { data: anyPersona } = await supabase
-          .from("personas")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(1);
-        if (anyPersona && anyPersona.length > 0) setPersona(anyPersona[0]);
-      } else {
-        setPersona(personaData[0]);
+      if (allPersonaData && allPersonaData.length > 0) {
+        setAllPersonas(allPersonaData);
+        const defaultPersona = allPersonaData.find((p: any) => p.is_default) || allPersonaData[0];
+        setPersona(defaultPersona);
       }
 
       if (charData) setCharacter(charData);
@@ -328,7 +325,7 @@ export default function ChatPage() {
     <div className="flex flex-col h-[100dvh] bg-black text-white relative overflow-hidden">
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-matcha/5 blur-[120px] -z-10 rounded-full" />
 
-      <header className="flex items-center justify-between p-4 border-b border-white/5 backdrop-blur-md bg-black/50 z-10">
+      <header className="sticky top-0 flex items-center justify-between p-4 border-b border-white/5 backdrop-blur-md bg-black/80 z-40">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => router.push("/")} className="rounded-full hover:bg-white/10">
             <ChevronLeft className="w-6 h-6" />
@@ -377,6 +374,25 @@ export default function ChatPage() {
                     <span className="text-sm">{model.name}</span>
                   </div>
                   {selectedModel.id === model.id && <Check className="w-4 h-4 text-matcha" />}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator className="bg-zinc-800" />
+              {/* Persona Selection */}
+              <DropdownMenuLabel className="text-xs text-zinc-500 uppercase tracking-wider">
+                Your Persona
+              </DropdownMenuLabel>
+              {allPersonas.map((p) => (
+                <DropdownMenuItem
+                  key={p.id}
+                  onClick={() => {
+                    setPersona(p);
+                    toast.success(`Now chatting as ${p.name}`);
+                  }}
+                  className="gap-2 cursor-pointer rounded-xl"
+                >
+                  <Users className="w-3 h-3 text-matcha" />
+                  <span className="text-sm">{p.name}</span>
+                  {persona?.id === p.id && <Check className="w-4 h-4 text-matcha" />}
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator className="bg-zinc-800" />
@@ -526,7 +542,7 @@ export default function ChatPage() {
         </div>
       </div>
 
-      <div className="p-4 bg-black/50 backdrop-blur-xl border-t border-white/5">
+      <div className="sticky bottom-24 p-4 bg-black/80 backdrop-blur-xl border-t border-white/5 z-30">
         <form onSubmit={handleSend} className="max-w-3xl mx-auto relative group">
           {/* Image preview */}
           {imageInput && (

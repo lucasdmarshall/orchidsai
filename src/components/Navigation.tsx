@@ -11,6 +11,7 @@ export function Navigation() {
 
   const navItems = [
     { href: "/", icon: Home, label: "Home" },
+    { href: "/chats", icon: MessageSquare, label: "Chats" },
     { href: "/create/character", icon: PlusCircle, label: "Character" },
     { href: "/create/persona", icon: User, label: "Persona" },
     { href: "/profile", icon: UserCircle, label: "Profile" },
