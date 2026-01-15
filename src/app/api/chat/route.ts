@@ -4,10 +4,10 @@ import { callOpenRouter, parseThinkingContent, ChatMessage, DEFAULT_SFW_SYSTEM_P
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const {
-      messages,
-      model = "google/gemini-2.0-flash-exp:free",
-      maxTokens = 1024,
+      const {
+        messages,
+        model = "deepseek/deepseek-v3:free",
+        maxTokens = 1024,
       sfwSystemPrompt,
       nsfwSystemPrompt,
       characterName,
@@ -74,12 +74,13 @@ ${formattedContext}
       { role: "system", content: systemContent }
     ];
 
-    // Check if model supports images (based on common vision model patterns)
-    const isVisionModel = model.includes("vision") || 
-                          model.includes("-vl") || 
-                          model.includes("gemini") ||
-                          model.includes("gpt-4o") ||
-                          model.includes("claude-3");
+      // Check if model supports images (based on common vision model patterns)
+      const isVisionModel = model.includes("vision") || 
+                            model.includes("-vl") || 
+                            model.includes("gemini") ||
+                            model.includes("gpt-4o") ||
+                            model.includes("claude-3") ||
+                            model.includes("llama-4");
 
     // Add conversation messages
     if (Array.isArray(messages)) {
