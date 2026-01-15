@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
     const {
       messages,
       model = "google/gemini-2.0-flash-exp:free",
-      maxTokens = 512,
+      maxTokens = 1024,
       systemPrompt,
       characterName,
       characterPersonality,

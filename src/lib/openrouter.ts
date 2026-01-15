@@ -93,7 +93,7 @@ export interface OpenRouterResponse {
 export async function callOpenRouter(
   messages: ChatMessage[],
   modelId: string,
-  maxTokens: number = 512,
+  maxTokens: number = 1024,
   stream: boolean = true
 ): Promise<Response> {
   const apiKey = getRandomApiKey();

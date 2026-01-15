@@ -49,7 +49,7 @@ interface SettingsData {
 export default function SettingsPage() {
     const [settings, setSettings] = useState<SettingsData>({
         systemPrompt: DEFAULT_SYSTEM_PROMPT,
-        maxTokens: 512,
+        maxTokens: 1024,
         models: DEFAULT_MODELS,
     });
     const [loading, setLoading] = useState(true);
@@ -72,11 +72,11 @@ export default function SettingsPage() {
                 const parsed = JSON.parse(saved);
                 setSettings({
                     systemPrompt: parsed.systemPrompt || DEFAULT_SYSTEM_PROMPT,
-                    maxTokens: parsed.maxTokens || 512,
+                    maxTokens: parsed.maxTokens || 1024,
                     models: parsed.models || DEFAULT_MODELS,
                 });
             } catch {
-                setSettings({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 512, models: DEFAULT_MODELS });
+                setSettings({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 1024, models: DEFAULT_MODELS });
             }
         } else {
             // No saved settings - use defaults
@@ -225,12 +225,12 @@ export default function SettingsPage() {
                         <Input
                             type="number"
                             value={settings.maxTokens}
-                            onChange={(e) => setSettings({ ...settings, maxTokens: parseInt(e.target.value) || 512 })}
-                            min={64}
-                            max={4096}
+                            onChange={(e) => setSettings({ ...settings, maxTokens: parseInt(e.target.value) || 1024 })}
+                            min={256}
+                            max={8192}
                             className="w-32 rounded-full bg-zinc-900/50 border-zinc-800 focus:border-matcha"
                         />
-                        <span className="text-sm text-zinc-500">tokens (64 - 4096)</span>
+                        <span className="text-sm text-zinc-500">tokens (256 - 8192)</span>
                     </div>
                 </motion.section>
 

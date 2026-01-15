@@ -101,7 +101,7 @@ export default function ChatPage() {
   const [models, setModels] = useState<ModelConfig[]>(DEFAULT_MODELS);
   const [selectedModel, setSelectedModel] = useState<ModelConfig>(DEFAULT_MODELS[0]);
   const [imageInput, setImageInput] = useState<string | null>(null);
-  const [settings, setSettings] = useState({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 512 });
+  const [settings, setSettings] = useState({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 1024 });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const saveMessageToDb = async (message: Message, currentChatId: string) => {
@@ -152,7 +152,7 @@ export default function ChatPage() {
         const parsed = JSON.parse(savedSettings);
         setSettings({
           systemPrompt: parsed.systemPrompt || DEFAULT_SYSTEM_PROMPT,
-          maxTokens: parsed.maxTokens || 512,
+          maxTokens: parsed.maxTokens || 1024,
         });
         if (parsed.models?.length > 0) {
           setModels(parsed.models);
