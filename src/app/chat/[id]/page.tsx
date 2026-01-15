@@ -272,9 +272,9 @@ export default function ChatPage() {
         created_at: new Date().toISOString(),
       };
 
-      // Always generate context summary from last 2 messages (before current message)
+      // Generate context summary from last 4 messages (before current message)
       const contextSummary = messages.length >= 2 ? summarizeContext(
-        messages.slice(-2).map(m => ({ role: m.role, content: m.content }))
+        messages.slice(-4).map(m => ({ role: m.role, content: m.content }))
       ) : "";
 
       setMessages((prev) => [...prev, userMessage]);

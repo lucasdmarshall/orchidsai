@@ -54,7 +54,7 @@ ${userPersona}
         .replace(/\{\{char\}\}/gi, characterName || "Character")
         .replace(/\{\{user\}\}/gi, userPersona?.split(":")[0]?.trim() || "User");
       
-      systemContent += `\n\n### RECENT CONTEXT (last 2 exchanges):
+      systemContent += `\n\n### RECENT CONTEXT (last 4 exchanges):
 ${formattedContext}
 (Continue from this context naturally. Don't repeat what was said.)`;
     }

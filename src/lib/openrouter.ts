@@ -128,10 +128,10 @@ export function parseThinkingContent(content: string): { thinking: string | null
   return { thinking: null, response: content };
 }
 
-// Summarize last 2 messages for context continuity
+// Summarize last 4 messages for context continuity
 export function summarizeContext(messages: Array<{ role: string; content: string }>): string {
-  // Take last 2 messages for summary (as per user's design)
-  const lastMessages = messages.slice(-2);
+  // Take last 4 messages for summary
+  const lastMessages = messages.slice(-4);
   if (lastMessages.length === 0) return "";
 
   const summary = lastMessages
