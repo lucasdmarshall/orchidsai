@@ -46,7 +46,7 @@ import {
   Check,
   Users
 } from "lucide-react";
-import { DEFAULT_MODELS, ModelConfig, summarizeContext, DEFAULT_SYSTEM_PROMPT, replacePlaceholders } from "@/lib/openrouter";
+import { DEFAULT_MODELS, ModelConfig, summarizeContext, replacePlaceholders } from "@/lib/openrouter";
 
 function parseNarrationContent(content: string): React.ReactNode {
   const regex = /(\*[^*]+\*)|("[^"]+")/;
@@ -101,7 +101,7 @@ export default function ChatPage() {
   const [models, setModels] = useState<ModelConfig[]>(DEFAULT_MODELS);
   const [selectedModel, setSelectedModel] = useState<ModelConfig>(DEFAULT_MODELS[0]);
   const [imageInput, setImageInput] = useState<string | null>(null);
-  const [settings, setSettings] = useState({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 1024 });
+  const [settings, setSettings] = useState({ sfwSystemPrompt: "", nsfwSystemPrompt: "", maxTokens: 1024 });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const saveMessageToDb = async (message: Message, currentChatId: string) => {
@@ -151,7 +151,8 @@ export default function ChatPage() {
       try {
         const parsed = JSON.parse(savedSettings);
         setSettings({
-          systemPrompt: parsed.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+          sfwSystemPrompt: parsed.sfwSystemPrompt || "",
+          nsfwSystemPrompt: parsed.nsfwSystemPrompt || "",
           maxTokens: parsed.maxTokens || 1024,
         });
         if (parsed.models?.length > 0) {
@@ -304,11 +305,13 @@ export default function ChatPage() {
             messages: recentMessages,
             model: selectedModel.id,
             maxTokens: settings.maxTokens,
-            systemPrompt: settings.systemPrompt,
+            sfwSystemPrompt: settings.sfwSystemPrompt,
+            nsfwSystemPrompt: settings.nsfwSystemPrompt,
             characterName: character?.name,
             characterPersonality: character?.personality,
             characterScenario: character?.scenario,
             characterExampleDialogue: character?.example_dialogue,
+            characterContentRating: character?.content_rating || "nsfw",
             userPersona: persona ? `${persona.name}: ${persona.personality || ""}` : undefined,
             contextSummary: contextSummary || undefined,
           }),

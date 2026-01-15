@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { callOpenRouter, parseThinkingContent, ChatMessage, DEFAULT_SYSTEM_PROMPT, replacePlaceholders } from "@/lib/openrouter";
+import { callOpenRouter, parseThinkingContent, ChatMessage, DEFAULT_SFW_SYSTEM_PROMPT, DEFAULT_NSFW_SYSTEM_PROMPT, replacePlaceholders } from "@/lib/openrouter";
 
 export async function POST(req: NextRequest) {
   try {
@@ -8,17 +8,23 @@ export async function POST(req: NextRequest) {
       messages,
       model = "google/gemini-2.0-flash-exp:free",
       maxTokens = 1024,
-      systemPrompt,
+      sfwSystemPrompt,
+      nsfwSystemPrompt,
       characterName,
       characterPersonality,
       characterScenario,
       characterExampleDialogue,
+      characterContentRating = "nsfw",
       userPersona,
       contextSummary
     } = body;
 
-    // Build the comprehensive roleplay system prompt
-    const basePrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    // Select system prompt based on character content rating
+    const isSfw = characterContentRating === "sfw";
+    const defaultPrompt = isSfw ? DEFAULT_SFW_SYSTEM_PROMPT : DEFAULT_NSFW_SYSTEM_PROMPT;
+    const basePrompt = isSfw 
+      ? (sfwSystemPrompt || defaultPrompt)
+      : (nsfwSystemPrompt || defaultPrompt);
     
     // Extract user name from persona
     const userName = userPersona?.split(":")[0]?.trim() || "User";
