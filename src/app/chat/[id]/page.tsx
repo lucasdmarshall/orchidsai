@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback, memo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
@@ -13,6 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
@@ -24,13 +25,63 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { toast } from "sonner";
-import { Send, ChevronLeft, MoreVertical, User, RefreshCw, Trash2, Info } from "lucide-react";
+import {
+  Send,
+  ChevronLeft,
+  MoreVertical,
+  User,
+  RefreshCw,
+  Trash2,
+  Info,
+  ImageIcon,
+  Brain,
+  ChevronDown,
+  Sparkles,
+  Check
+} from "lucide-react";
+import { DEFAULT_MODELS, ModelConfig, summarizeContext } from "@/lib/openrouter";
+
+// Parse narration (*text*) vs dialogue ("text")
+// Narration = red/italic, Speech = white
+function parseNarrationContent(content: string): React.ReactNode {
+  // Regex to match *...* or "..."
+  const regex = /(\*[^*]+\*)|("[^"]+")/;
+  const parts = content.split(regex);
+
+  return parts.filter(Boolean).map((part, i) => {
+    if (part.startsWith('*') && part.endsWith('*')) {
+      // Narration - red and italic
+      return (
+        <span key={i} className="text-red-500 italic font-medium">
+          {part.slice(1, -1)}
+        </span>
+      );
+    }
+    if (part.startsWith('"') && part.endsWith('"')) {
+      // Speech - bright white
+      return (
+        <span key={i} className="text-white font-bold">
+          {part}
+        </span>
+      );
+    }
+    // Normal text - muted
+    return <span key={i} className="text-zinc-400">{part}</span>;
+  });
+}
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  thinking?: string;
+  image?: string;
   created_at: string;
 }
 
@@ -46,12 +97,45 @@ export default function ChatPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showInfoPanel, setShowInfoPanel] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
+  const [streamingThinking, setStreamingThinking] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // New state for model selection and image
+  const [models, setModels] = useState<ModelConfig[]>(DEFAULT_MODELS);
+  const [selectedModel, setSelectedModel] = useState<ModelConfig>(DEFAULT_MODELS[0]);
+  const [imageInput, setImageInput] = useState<string | null>(null);
+  const [settings, setSettings] = useState({ systemPrompt: "", maxTokens: 512 });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Load settings and selected model from localStorage
+    const savedSettings = localStorage.getItem("orchids_settings");
+    if (savedSettings) {
+      try {
+        const parsed = JSON.parse(savedSettings);
+        setSettings({
+          systemPrompt: parsed.systemPrompt || "",
+          maxTokens: parsed.maxTokens || 512,
+        });
+        if (parsed.models?.length > 0) {
+          setModels(parsed.models);
+        }
+      } catch { }
+    }
+
+    const savedModel = localStorage.getItem("orchids_selected_model");
+    if (savedModel) {
+      try {
+        const parsed = JSON.parse(savedModel);
+        setSelectedModel(parsed);
+      } catch { }
+    }
+  }, []);
 
   useEffect(() => {
     async function fetchData() {
       const charId = params.id as string;
-      
+
       const { data: charData } = await supabase
         .from("characters")
         .select("*")
@@ -96,15 +180,28 @@ export default function ChatPage() {
     }
   }, [messages, isTyping, streamingContent]);
 
-  const buildPrompt = (userInput: string) => {
-    const charInfo = character ? `You are ${character.name}, ${character.title}. ${character.personality || ""}` : "";
-    const personaInfo = persona ? `The user's name is ${persona.name}. ${persona.personality || ""}` : "";
-    const context = messages
-      .slice(-10)
-      .map((m) => `${m.role === "user" ? "User" : character?.name || "Assistant"}: ${m.content}`)
-      .join("\n");
-    
-    return `${charInfo}\n${personaInfo}\n\nConversation:\n${context}\nUser: ${userInput}\n${character?.name || "Assistant"}:`;
+  const selectModel = (model: ModelConfig) => {
+    setSelectedModel(model);
+    localStorage.setItem("orchids_selected_model", JSON.stringify(model));
+    toast.success(`Switched to ${model.name}`);
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!selectedModel.supportsImage) {
+      toast.error("Selected model doesn't support images");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target?.result as string;
+      setImageInput(base64);
+      toast.success("Image attached!");
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSend = async (e: React.FormEvent) => {
@@ -115,39 +212,74 @@ export default function ChatPage() {
       id: Math.random().toString(),
       role: "user",
       content: input,
+      image: imageInput || undefined,
       created_at: new Date().toISOString(),
     };
 
-    const prompt = buildPrompt(input);
+    // Build context summary from last 4 messages
+    const contextSummary = messages.length > 4 ? summarizeContext(
+      messages.slice(-4).map(m => ({ role: m.role, content: m.content }))
+    ) : "";
+
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
+    setImageInput(null);
     setIsTyping(true);
     setStreamingContent("");
+    setStreamingThinking("");
 
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: prompt,
-          max_tokens: 256,
+          messages: [{ role: "user", content: input, image: imageInput }],
+          model: selectedModel.id,
+          maxTokens: settings.maxTokens,
+          systemPrompt: settings.systemPrompt,
+          characterName: character?.name,
+          characterPersonality: character?.personality,
+          userPersona: persona ? `${persona.name}: ${persona.personality || ""}` : undefined,
+          contextSummary,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error("API request failed");
-      }
+      if (!response.ok) throw new Error("API request failed");
 
-      console.log("Response received, status:", response.status);
-      const fullContent = await response.text();
-      console.log("Full content received, length:", fullContent.length);
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response body");
+
+      const decoder = new TextDecoder();
+      let fullContent = "";
+      let fullThinking = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n").filter(Boolean);
+
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.content) {
+              fullContent += parsed.content;
+              setStreamingContent(parsed.fullContent || fullContent);
+            }
+            if (parsed.thinking) {
+              fullThinking = parsed.thinking;
+              setStreamingThinking(fullThinking);
+            }
+          } catch { }
+        }
+      }
 
       const aiMessage: Message = {
         id: Math.random().toString(),
         role: "assistant",
         content: fullContent || "I apologize, I couldn't generate a response.",
+        thinking: fullThinking || undefined,
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, aiMessage]);
@@ -164,6 +296,7 @@ export default function ChatPage() {
     } finally {
       setIsTyping(false);
       setStreamingContent("");
+      setStreamingThinking("");
     }
   };
 
@@ -194,7 +327,7 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col h-[100dvh] bg-black text-white relative overflow-hidden">
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-matcha/5 blur-[120px] -z-10 rounded-full" />
-      
+
       <header className="flex items-center justify-between p-4 border-b border-white/5 backdrop-blur-md bg-black/50 z-10">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => router.push("/")} className="rounded-full hover:bg-white/10">
@@ -211,11 +344,11 @@ export default function ChatPage() {
             </div>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-2">
-          <Button 
-            variant="ghost" 
-            size="icon" 
+          <Button
+            variant="ghost"
+            size="icon"
             className="rounded-full hover:bg-white/10"
             onClick={() => setShowInfoPanel(!showInfoPanel)}
           >
@@ -227,14 +360,33 @@ export default function ChatPage() {
                 <MoreVertical className="w-5 h-5 text-zinc-500" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="rounded-2xl border-zinc-800 bg-zinc-900">
+            <DropdownMenuContent align="end" className="rounded-2xl border-zinc-800 bg-zinc-900 w-56">
+              {/* Model Selection */}
+              <DropdownMenuLabel className="text-xs text-zinc-500 uppercase tracking-wider">
+                Model Selection
+              </DropdownMenuLabel>
+              {models.map((model) => (
+                <DropdownMenuItem
+                  key={model.id}
+                  onClick={() => selectModel(model)}
+                  className="gap-2 cursor-pointer rounded-xl"
+                >
+                  <div className="flex items-center gap-2 flex-1">
+                    {model.supportsThinking && <Brain className="w-3 h-3 text-purple-400" />}
+                    {model.supportsImage && <ImageIcon className="w-3 h-3 text-blue-400" />}
+                    <span className="text-sm">{model.name}</span>
+                  </div>
+                  {selectedModel.id === model.id && <Check className="w-4 h-4 text-matcha" />}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator className="bg-zinc-800" />
               <DropdownMenuItem onClick={startNewChat} className="gap-2 cursor-pointer rounded-xl">
                 <RefreshCw className="w-4 h-4" />
                 Start New Chat
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-zinc-800" />
-              <DropdownMenuItem 
-                onClick={() => setShowDeleteDialog(true)} 
+              <DropdownMenuItem
+                onClick={() => setShowDeleteDialog(true)}
                 className="gap-2 cursor-pointer text-red-400 focus:text-red-400 rounded-xl"
               >
                 <Trash2 className="w-4 h-4" />
@@ -254,6 +406,12 @@ export default function ChatPage() {
             className="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-sm overflow-hidden"
           >
             <div className="p-4 space-y-3 max-w-3xl mx-auto">
+              <div className="flex items-center gap-2 text-xs text-matcha">
+                <Sparkles className="w-3 h-3" />
+                Using: {selectedModel.name}
+                {selectedModel.supportsThinking && <Brain className="w-3 h-3 text-purple-400" />}
+                {selectedModel.supportsImage && <ImageIcon className="w-3 h-3 text-blue-400" />}
+              </div>
               <div>
                 <span className="text-[10px] uppercase tracking-wider text-zinc-500">Personality</span>
                 <p className="text-sm text-zinc-300 mt-1">{character.personality || "No personality defined"}</p>
@@ -286,12 +444,37 @@ export default function ChatPage() {
                       {msg.role === "user" ? <User className="w-4 h-4" /> : character.name[0]}
                     </AvatarFallback>
                   </Avatar>
-                  <div className={`p-4 rounded-[1.5rem] text-sm leading-relaxed ${
-                    msg.role === "user" 
-                      ? "bg-matcha text-black rounded-tr-none font-medium" 
+                  <div className="space-y-2">
+                    {/* Thinking section */}
+                    {msg.thinking && (
+                      <Collapsible>
+                        <CollapsibleTrigger className="flex items-center gap-2 text-xs text-purple-400 hover:text-purple-300 transition-colors">
+                          <Brain className="w-3 h-3" />
+                          <span>Thinking</span>
+                          <ChevronDown className="w-3 h-3" />
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <div className="mt-2 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200">
+                            {msg.thinking}
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+                    {/* Image if present */}
+                    {msg.image && (
+                      <img
+                        src={msg.image}
+                        alt="User uploaded"
+                        className="max-w-[200px] rounded-xl border border-zinc-700"
+                      />
+                    )}
+                    {/* Message content */}
+                    <div className={`p-4 rounded-[1.5rem] text-sm leading-relaxed ${msg.role === "user"
+                      ? "bg-matcha text-black rounded-tr-none font-medium"
                       : "bg-zinc-900 border border-zinc-800 rounded-tl-none text-zinc-200"
-                  }`}>
-                    {msg.content}
+                      }`}>
+                      {msg.role === "assistant" ? parseNarrationContent(msg.content) : msg.content}
+                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -311,21 +494,32 @@ export default function ChatPage() {
                     {character.name[0]}
                   </AvatarFallback>
                 </Avatar>
-                {streamingContent ? (
-                  <div className="p-4 rounded-[1.5rem] text-sm leading-relaxed bg-zinc-900 border border-zinc-800 rounded-tl-none text-zinc-200">
-                    {streamingContent}
-                    <span className="inline-block w-1 h-4 bg-matcha ml-1 animate-pulse" />
-                  </div>
-                ) : (
-                  <div className="flex gap-3 items-center text-zinc-500 text-xs bg-zinc-900/50 px-4 py-2 rounded-full border border-zinc-800">
-                    <div className="flex gap-1">
-                      <span className="w-1 h-1 bg-matcha rounded-full animate-bounce" />
-                      <span className="w-1 h-1 bg-matcha rounded-full animate-bounce [animation-delay:0.2s]" />
-                      <span className="w-1 h-1 bg-matcha rounded-full animate-bounce [animation-delay:0.4s]" />
+                <div className="space-y-2">
+                  {streamingThinking && (
+                    <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Brain className="w-3 h-3 text-purple-400" />
+                        <span className="text-purple-400">Thinking...</span>
+                      </div>
+                      {streamingThinking}
                     </div>
-                    {character.name} is typing...
-                  </div>
-                )}
+                  )}
+                  {streamingContent ? (
+                    <div className="p-4 rounded-[1.5rem] text-sm leading-relaxed bg-zinc-900 border border-zinc-800 rounded-tl-none text-zinc-200">
+                      {streamingContent}
+                      <span className="inline-block w-1 h-4 bg-matcha ml-1 animate-pulse" />
+                    </div>
+                  ) : (
+                    <div className="flex gap-3 items-center text-zinc-500 text-xs bg-zinc-900/50 px-4 py-2 rounded-full border border-zinc-800">
+                      <div className="flex gap-1">
+                        <span className="w-1 h-1 bg-matcha rounded-full animate-bounce" />
+                        <span className="w-1 h-1 bg-matcha rounded-full animate-bounce [animation-delay:0.2s]" />
+                        <span className="w-1 h-1 bg-matcha rounded-full animate-bounce [animation-delay:0.4s]" />
+                      </div>
+                      {character.name} is typing...
+                    </div>
+                  )}
+                </div>
               </div>
             </motion.div>
           )}
@@ -334,20 +528,58 @@ export default function ChatPage() {
 
       <div className="p-4 bg-black/50 backdrop-blur-xl border-t border-white/5">
         <form onSubmit={handleSend} className="max-w-3xl mx-auto relative group">
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={`Message ${character.name}...`}
-            className="h-14 rounded-full bg-zinc-900/80 border-zinc-800 pr-14 focus:border-matcha focus:ring-matcha transition-all"
+          {/* Image preview */}
+          {imageInput && (
+            <div className="absolute -top-16 left-0 p-2">
+              <div className="relative">
+                <img src={imageInput} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-zinc-700" />
+                <button
+                  type="button"
+                  onClick={() => setImageInput(null)}
+                  className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-[10px] text-white"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          )}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImageSelect}
+            accept="image/*"
+            className="hidden"
           />
-          <Button
-            type="submit"
-            size="icon"
-            disabled={!input.trim() || isTyping}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full w-10 h-10 bg-matcha hover:bg-matcha-dark text-black transition-all disabled:opacity-50 disabled:bg-zinc-800"
-          >
-            <Send className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!selectedModel.supportsImage}
+              className={`rounded-full w-10 h-10 ${selectedModel.supportsImage
+                ? "text-blue-400 hover:bg-blue-500/10"
+                : "text-zinc-600 cursor-not-allowed"
+                }`}
+              title={selectedModel.supportsImage ? "Attach image" : "Model doesn't support images"}
+            >
+              <ImageIcon className="w-5 h-5" />
+            </Button>
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={`Message ${character.name}...`}
+              className="h-14 rounded-full bg-zinc-900/80 border-zinc-800 pr-14 focus:border-matcha focus:ring-matcha transition-all flex-1"
+            />
+            <Button
+              type="submit"
+              size="icon"
+              disabled={!input.trim() || isTyping}
+              className="rounded-full w-10 h-10 bg-matcha hover:bg-matcha-dark text-black transition-all disabled:opacity-50 disabled:bg-zinc-800"
+            >
+              <Send className="w-4 h-4" />
+            </Button>
+          </div>
         </form>
         <p className="text-[9px] text-zinc-600 text-center mt-3 font-medium uppercase tracking-widest">
           Remember: Everything Characters say is made up!

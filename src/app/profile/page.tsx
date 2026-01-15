@@ -163,10 +163,17 @@ export default function ProfilePage() {
         animate={{ opacity: 1, y: 0 }}
         className="space-y-2"
       >
-        <h1 className="text-4xl font-black tracking-tight flex items-center gap-3">
-          <User className="w-10 h-10 text-matcha" />
-          My Profile
-        </h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-4xl font-black tracking-tight flex items-center gap-3">
+            <User className="w-10 h-10 text-matcha" />
+            My Profile
+          </h1>
+          <Link href="/settings">
+            <Button variant="ghost" size="icon" className="rounded-full hover:bg-white/10">
+              <Settings className="w-6 h-6 text-zinc-400 hover:text-matcha transition-colors" />
+            </Button>
+          </Link>
+        </div>
         <p className="text-zinc-500">Manage your personas and created characters.</p>
       </motion.div>
 
@@ -204,11 +211,10 @@ export default function ProfilePage() {
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
-                  className={`relative p-6 rounded-[2rem] border transition-all ${
-                    persona.is_default
+                  className={`relative p-6 rounded-[2rem] border transition-all ${persona.is_default
                       ? "bg-matcha/10 border-matcha/50"
                       : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700"
-                  }`}
+                    }`}
                 >
                   {persona.is_default && (
                     <div className="absolute top-4 right-4 bg-matcha text-black text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
