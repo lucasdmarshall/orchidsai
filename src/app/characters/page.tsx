@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,8 +44,11 @@ import {
   ShieldAlert,
   ChevronLeft,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import Image from "next/image";
+import Link from "next/link";
 
 interface Tag {
   id: string;
@@ -68,10 +70,13 @@ interface Character {
   tags?: Tag[];
 }
 
+const ITEMS_PER_PAGE = 12;
+
 export default function CharactersPage() {
   const router = useRouter();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editCharacter, setEditCharacter] = useState<Character | null>(null);
@@ -79,7 +84,13 @@ export default function CharactersPage() {
   const [contentFilter, setContentFilter] = useState<"all" | "sfw" | "nsfw">("all");
   const [tags, setTags] = useState<Tag[]>([]);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  
   const tagsContainerRef = useRef<HTMLDivElement>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function fetchTags() {
@@ -93,15 +104,28 @@ export default function CharactersPage() {
     fetchTags();
   }, []);
 
-  useEffect(() => {
-    fetchCharacters();
-  }, []);
+  const fetchCharacters = useCallback(async (pageNum: number, reset: boolean = false) => {
+    if (reset) {
+      setLoading(true);
+    } else {
+      setLoadingMore(true);
+    }
 
-  const fetchCharacters = async () => {
-    const { data: chars } = await supabase
+    let query = supabase
       .from("characters")
-      .select("*")
-      .order("created_at", { ascending: false });
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(pageNum * ITEMS_PER_PAGE, (pageNum + 1) * ITEMS_PER_PAGE - 1);
+
+    if (contentFilter !== "all") {
+      query = query.eq("content_rating", contentFilter);
+    }
+
+    if (search) {
+      query = query.or(`name.ilike.%${search}%,title.ilike.%${search}%`);
+    }
+
+    const { data: chars, count } = await query;
 
     if (chars) {
       const { data: characterTags } = await supabase
@@ -116,15 +140,58 @@ export default function CharactersPage() {
         tagsByCharacter.set(ct.character_id, existing);
       });
 
-      const enrichedChars = chars.map((char) => ({
+      let enrichedChars = chars.map((char) => ({
         ...char,
         tags: tagsByCharacter.get(char.id) || [],
       }));
 
-      setCharacters(enrichedChars);
+      if (selectedTag) {
+        enrichedChars = enrichedChars.filter(char => 
+          char.tags?.some(t => t.slug === selectedTag)
+        );
+      }
+
+      if (reset) {
+        setCharacters(enrichedChars);
+      } else {
+        setCharacters(prev => [...prev, ...enrichedChars]);
+      }
+
+      setTotalCount(count || 0);
+      setHasMore(chars.length === ITEMS_PER_PAGE);
     }
+
     setLoading(false);
-  };
+    setLoadingMore(false);
+  }, [contentFilter, search, selectedTag]);
+
+  useEffect(() => {
+    setPage(0);
+    fetchCharacters(0, true);
+  }, [contentFilter, search, selectedTag, fetchCharacters]);
+
+  useEffect(() => {
+    if (observerRef.current) observerRef.current.disconnect();
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loading && !loadingMore) {
+          setPage(prev => {
+            const newPage = prev + 1;
+            fetchCharacters(newPage, false);
+            return newPage;
+          });
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (loadMoreRef.current) {
+      observerRef.current.observe(loadMoreRef.current);
+    }
+
+    return () => observerRef.current?.disconnect();
+  }, [hasMore, loading, loadingMore, fetchCharacters]);
 
   const handleDelete = async () => {
     if (!deleteId) return;
@@ -175,24 +242,8 @@ export default function CharactersPage() {
     }
   };
 
-  const filteredCharacters = characters.filter((c) => {
-    const matchesSearch =
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.title.toLowerCase().includes(search.toLowerCase());
-
-    const matchesContent =
-      contentFilter === "all" ||
-      (contentFilter === "sfw" && c.content_rating !== "nsfw") ||
-      (contentFilter === "nsfw" && c.content_rating === "nsfw");
-
-    const matchesTag =
-      !selectedTag || c.tags?.some((t) => t.slug === selectedTag);
-
-    return matchesSearch && matchesContent && matchesTag;
-  });
-
   return (
-    <main className="min-h-screen px-6 py-12 max-w-6xl mx-auto pb-32">
+    <main className="min-h-screen px-6 py-12 max-w-7xl mx-auto pb-32">
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -311,16 +362,28 @@ export default function CharactersPage() {
           </button>
         </div>
 
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-zinc-400 font-bold uppercase tracking-widest text-sm">
+            <Users className="w-4 h-4 text-matcha" />
+            {selectedTag ? `${tags.find(t => t.slug === selectedTag)?.name || ""}` : "All"} Characters
+          </div>
+          {!loading && (
+            <span className="text-zinc-500 text-sm">
+              {characters.length} of {totalCount} characters
+            </span>
+          )}
+        </div>
+
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            {Array.from({ length: 12 }).map((_, i) => (
               <div
                 key={i}
-                className="h-32 bg-zinc-900 animate-pulse rounded-2xl"
+                className="aspect-[3/4] bg-zinc-900 animate-pulse rounded-2xl"
               />
             ))}
           </div>
-        ) : filteredCharacters.length === 0 ? (
+        ) : characters.length === 0 ? (
           <div className="text-center py-20 space-y-4">
             <Users className="w-16 h-16 text-zinc-700 mx-auto" />
             <p className="text-zinc-500 text-lg">No characters found</p>
@@ -332,108 +395,116 @@ export default function CharactersPage() {
             </Button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <AnimatePresence>
-              {filteredCharacters.map((char, index) => (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            <AnimatePresence mode="popLayout">
+              {characters.map((char, index) => (
                 <motion.div
                   key={char.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9 }}
-                  transition={{ delay: index * 0.05 }}
-                  className="group relative bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4 hover:border-matcha/50 transition-all"
+                  transition={{ delay: Math.min(index * 0.03, 0.3) }}
+                  whileHover={{ y: -4, scale: 1.02 }}
+                  className="group relative bg-zinc-900/80 rounded-2xl overflow-hidden cursor-pointer border border-zinc-800 hover:border-matcha/50 transition-all"
                 >
-                  <div className="flex items-start gap-4">
-                    <div className="relative">
-                      <Avatar className="w-14 h-14 ring-2 ring-zinc-800">
-                        <AvatarImage src={char.avatar_url} />
-                        <AvatarFallback className="bg-zinc-800 text-lg">
-                          {char.name[0]}
-                        </AvatarFallback>
-                      </Avatar>
+                  <Link href={`/chat/${char.id}`}>
+                    <div className="relative aspect-[3/4] overflow-hidden bg-zinc-800">
+                      <Image
+                        src={char.avatar_url || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=400&h=400&auto=format&fit=crop"}
+                        alt={char.name}
+                        fill
+                        className="object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                      
                       {char.content_rating === "nsfw" && (
-                        <div className="absolute -top-1 -right-1 bg-red-500 text-white px-1 py-0.5 rounded text-[8px] font-bold">
+                        <div className="absolute top-2 left-2 bg-red-500/90 text-white px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1">
+                          <ShieldAlert className="w-3 h-3" />
                           18+
                         </div>
                       )}
-                    </div>
 
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-white truncate">
-                        {char.name}
-                      </h3>
-                      <p className="text-xs text-zinc-500 truncate">
-                        {char.title}
-                      </p>
-                      <p className="text-xs text-zinc-600 mt-2 line-clamp-2">
-                        {char.personality}
-                      </p>
-                      {char.tags && char.tags.length > 0 && (
-                        <div className="flex gap-1 mt-2 flex-wrap">
-                          {char.tags.slice(0, 3).map((tag, idx) => (
-                            <span
-                              key={`${char.id}-${tag.id}-${idx}`}
-                              style={{ backgroundColor: `${tag.color}CC` }}
-                              className="px-1.5 py-0.5 rounded text-[9px] font-medium text-white"
-                            >
-                              {tag.name}
-                            </span>
-                          ))}
-                          {char.tags.length > 3 && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-zinc-700/80 text-zinc-300">
-                              +{char.tags.length - 3}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                      <div className="absolute bottom-0 left-0 right-0 p-3">
+                        <h3 className="text-sm font-bold text-white truncate">{char.name}</h3>
+                        <p className="text-[11px] text-zinc-400 truncate">{char.title}</p>
+                        
+                        {char.tags && char.tags.length > 0 && (
+                          <div className="flex gap-1 mt-1.5 overflow-hidden">
+                            {char.tags.slice(0, 2).map((tag, idx) => (
+                              <span
+                                key={`${char.id}-${tag.id}-${idx}`}
+                                style={{ backgroundColor: `${tag.color}CC` }}
+                                className="px-1.5 py-0.5 rounded text-[9px] font-medium text-white"
+                              >
+                                {tag.name}
+                              </span>
+                            ))}
+                            {char.tags.length > 2 && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-zinc-700/80 text-zinc-300">
+                                +{char.tags.length - 2}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
 
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="relative z-10 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="end"
-                        className="bg-zinc-900 border-zinc-800"
+                      <div className="absolute top-2 right-2 bg-matcha text-black p-2 rounded-full opacity-0 group-hover:opacity-100 transform scale-75 group-hover:scale-100 transition-all shadow-lg">
+                        <MessageSquare className="w-4 h-4" />
+                      </div>
+                    </div>
+                  </Link>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute bottom-2 right-2 z-20 rounded-full bg-black/50 hover:bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8"
                       >
-                        <DropdownMenuItem
-                          onClick={() => router.push(`/chat/${char.id}`)}
-                          className="gap-2"
-                        >
-                          <MessageSquare className="w-4 h-4" />
-                          Chat
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setEditCharacter(char)}
-                          className="gap-2"
-                        >
-                          <Pencil className="w-4 h-4" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setDeleteId(char.id)}
-                          className="gap-2 text-red-400 focus:text-red-400"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-
-                  <div
-                    onClick={() => router.push(`/chat/${char.id}`)}
-                    className="absolute inset-0 cursor-pointer rounded-2xl z-0"
-                  />
+                        <MoreVertical className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      className="bg-zinc-900 border-zinc-800"
+                    >
+                      <DropdownMenuItem
+                        onClick={() => router.push(`/chat/${char.id}`)}
+                        className="gap-2"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                        Chat
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setEditCharacter(char)}
+                        className="gap-2"
+                      >
+                        <Pencil className="w-4 h-4" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setDeleteId(char.id)}
+                        className="gap-2 text-red-400 focus:text-red-400"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </motion.div>
               ))}
             </AnimatePresence>
+          </div>
+        )}
+
+        {hasMore && !loading && (
+          <div ref={loadMoreRef} className="flex justify-center py-8">
+            {loadingMore && (
+              <div className="flex items-center gap-2 text-zinc-500">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Loading more...
+              </div>
+            )}
           </div>
         )}
       </motion.div>
