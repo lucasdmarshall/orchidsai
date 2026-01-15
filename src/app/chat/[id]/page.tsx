@@ -140,7 +140,9 @@ export default function ChatPage() {
         throw new Error("API request failed");
       }
 
+      console.log("Response received, status:", response.status);
       const fullContent = await response.text();
+      console.log("Full content received, length:", fullContent.length);
 
       const aiMessage: Message = {
         id: Math.random().toString(),
