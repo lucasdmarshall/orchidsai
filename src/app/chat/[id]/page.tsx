@@ -259,16 +259,22 @@ export default function ChatPage() {
       e.preventDefault();
       if (!input.trim() || isTyping || !chatId) return;
 
+      // Warn if trying to send image with non-vision model
+      if (imageInput && !selectedModel.supportsImage) {
+        toast.warning("Current model doesn't support images. Image will be ignored.");
+      }
+
       const userMessage: Message = {
         id: Math.random().toString(),
         role: "user",
         content: input,
-        image: imageInput || undefined,
+        image: selectedModel.supportsImage ? imageInput || undefined : undefined,
         created_at: new Date().toISOString(),
       };
 
-      const contextSummary = messages.length > 4 ? summarizeContext(
-        messages.slice(-4).map(m => ({ role: m.role, content: m.content }))
+      // Always generate context summary from last 2 messages (before current message)
+      const contextSummary = messages.length >= 2 ? summarizeContext(
+        messages.slice(-2).map(m => ({ role: m.role, content: m.content }))
       ) : "";
 
       setMessages((prev) => [...prev, userMessage]);
@@ -301,7 +307,7 @@ export default function ChatPage() {
             characterScenario: character?.scenario,
             characterExampleDialogue: character?.example_dialogue,
             userPersona: persona ? `${persona.name}: ${persona.personality || ""}` : undefined,
-            contextSummary: messages.length > 10 ? contextSummary : undefined,
+            contextSummary: contextSummary || undefined,
           }),
         });
 

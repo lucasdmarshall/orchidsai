@@ -74,7 +74,10 @@ Embody {{char}} completely. Begin.`.trim();
 
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
-  content: string | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
+  content: string | Array<
+    | { type: "text"; text: string } 
+    | { type: "image_url"; image_url: { url: string; detail?: "auto" | "low" | "high" } }
+  >;
 }
 
 export interface OpenRouterResponse {
@@ -125,14 +128,20 @@ export function parseThinkingContent(content: string): { thinking: string | null
   return { thinking: null, response: content };
 }
 
-// Summarize messages for context
+// Summarize last 2 messages for context continuity
 export function summarizeContext(messages: Array<{ role: string; content: string }>): string {
-  const lastMessages = messages.slice(-4);
+  // Take last 2 messages for summary (as per user's design)
+  const lastMessages = messages.slice(-2);
   if (lastMessages.length === 0) return "";
 
   const summary = lastMessages
-    .map(m => `${m.role === "user" ? "User" : "AI"}: ${m.content.slice(0, 100)}${m.content.length > 100 ? "..." : ""}`)
+    .map(m => {
+      const speaker = m.role === "user" ? "{{user}}" : "{{char}}";
+      // Truncate to 150 chars for better context
+      const content = m.content.length > 150 ? m.content.slice(0, 150) + "..." : m.content;
+      return `${speaker}: ${content}`;
+    })
     .join("\n");
 
-  return `[Previous conversation summary]\n${summary}\n[End of summary]\n\n`;
+  return summary;
 }

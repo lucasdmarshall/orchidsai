@@ -47,11 +47,16 @@ ${userPersona}
 (Acknowledge and respond to the user according to their persona.)`;
     }
 
-    // Add conversation context summary for continuity
+    // Add conversation context summary for continuity (last 2 messages)
     if (contextSummary) {
-      systemContent += `\n\n### RECENT CONVERSATION CONTEXT:
-${contextSummary}
-(Use this context to maintain continuity. Do not repeat what was already said.)`;
+      // Replace placeholders in context summary too
+      const formattedContext = contextSummary
+        .replace(/\{\{char\}\}/gi, characterName || "Character")
+        .replace(/\{\{user\}\}/gi, userPersona?.split(":")[0]?.trim() || "User");
+      
+      systemContent += `\n\n### RECENT CONTEXT (last 2 exchanges):
+${formattedContext}
+(Continue from this context naturally. Don't repeat what was said.)`;
     }
 
     // Build messages array for OpenRouter
@@ -59,17 +64,37 @@ ${contextSummary}
       { role: "system", content: systemContent }
     ];
 
+    // Check if model supports images (based on common vision model patterns)
+    const isVisionModel = model.includes("vision") || 
+                          model.includes("-vl") || 
+                          model.includes("gemini") ||
+                          model.includes("gpt-4o") ||
+                          model.includes("claude-3");
+
     // Add conversation messages
     if (Array.isArray(messages)) {
       for (const msg of messages) {
-        if (msg.image) {
-          // Handle image input
+        if (msg.image && isVisionModel) {
+          // Handle image input for vision-capable models
+          // OpenRouter expects this format for multimodal
           apiMessages.push({
             role: msg.role,
             content: [
-              { type: "text", text: msg.content },
-              { type: "image_url", image_url: { url: msg.image } }
+              { type: "text", text: msg.content || "What do you see in this image?" },
+              { 
+                type: "image_url", 
+                image_url: { 
+                  url: msg.image,
+                  detail: "auto"  // Let the model decide detail level
+                } 
+              }
             ]
+          });
+        } else if (msg.image && !isVisionModel) {
+          // For non-vision models, just send text with a note about the image
+          apiMessages.push({
+            role: msg.role,
+            content: `${msg.content || ""}\n[User shared an image, but this model cannot process images]`
           });
         } else {
           apiMessages.push({
