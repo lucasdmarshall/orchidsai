@@ -81,12 +81,12 @@ export function parseThinkingContent(content: string): { thinking: string | null
     return { thinking, response };
   }
   
-  // Handle incomplete thinking tags during streaming
-  if (content.includes("<think>")) {
+  // Handle incomplete thinking tags during streaming (no closing tag yet)
+  if (content.includes("<think>") && !content.includes("</think>")) {
     const parts = content.split("<think>");
-    const thinking = parts[1].trim();
-    const response = parts[0].trim();
-    return { thinking, response: response || "" };
+    const thinking = parts[1] ? parts[1].trim() : "";
+    const response = parts[0] ? parts[0].trim() : "";
+    return { thinking: thinking || null, response };
   }
   
   return { thinking: null, response: content };
