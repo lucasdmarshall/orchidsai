@@ -26,6 +26,7 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import {
     Settings,
@@ -36,19 +37,23 @@ import {
     ChevronLeft,
     Save,
     Sparkles,
+    Shield,
+    ShieldOff,
 } from "lucide-react";
 import Link from "next/link";
-import { DEFAULT_MODELS, ModelConfig, DEFAULT_SYSTEM_PROMPT } from "@/lib/constants";
+import { DEFAULT_MODELS, ModelConfig, DEFAULT_SFW_SYSTEM_PROMPT, DEFAULT_NSFW_SYSTEM_PROMPT } from "@/lib/constants";
 
 interface SettingsData {
-    systemPrompt: string;
+    sfwSystemPrompt: string;
+    nsfwSystemPrompt: string;
     maxTokens: number;
     models: ModelConfig[];
 }
 
 export default function SettingsPage() {
     const [settings, setSettings] = useState<SettingsData>({
-        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        sfwSystemPrompt: DEFAULT_SFW_SYSTEM_PROMPT,
+        nsfwSystemPrompt: DEFAULT_NSFW_SYSTEM_PROMPT,
         maxTokens: 512,
         models: DEFAULT_MODELS,
     });
@@ -60,34 +65,36 @@ export default function SettingsPage() {
         supportsThinking: false,
         supportsImage: false,
     });
+    const [maxTokensInput, setMaxTokensInput] = useState("512");
 
     const [hasChanges, setHasChanges] = useState(false);
     const [initialLoad, setInitialLoad] = useState(true);
 
     useEffect(() => {
-        // Load settings from localStorage
         const saved = localStorage.getItem("orchids_settings");
         if (saved) {
             try {
                 const parsed = JSON.parse(saved);
-                setSettings({
-                    systemPrompt: parsed.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+                const loadedSettings = {
+                    sfwSystemPrompt: parsed.sfwSystemPrompt || parsed.systemPrompt || DEFAULT_SFW_SYSTEM_PROMPT,
+                    nsfwSystemPrompt: parsed.nsfwSystemPrompt || DEFAULT_NSFW_SYSTEM_PROMPT,
                     maxTokens: parsed.maxTokens || 512,
                     models: parsed.models || DEFAULT_MODELS,
-                });
+                };
+                setSettings(loadedSettings);
+                setMaxTokensInput(String(loadedSettings.maxTokens));
             } catch {
-                setSettings({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 512, models: DEFAULT_MODELS });
+                setSettings({ sfwSystemPrompt: DEFAULT_SFW_SYSTEM_PROMPT, nsfwSystemPrompt: DEFAULT_NSFW_SYSTEM_PROMPT, maxTokens: 512, models: DEFAULT_MODELS });
+                setMaxTokensInput("512");
             }
         } else {
-            // No saved settings - use defaults
-            setSettings({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 512, models: DEFAULT_MODELS });
+            setSettings({ sfwSystemPrompt: DEFAULT_SFW_SYSTEM_PROMPT, nsfwSystemPrompt: DEFAULT_NSFW_SYSTEM_PROMPT, maxTokens: 512, models: DEFAULT_MODELS });
+            setMaxTokensInput("512");
         }
         setLoading(false);
-        // Mark initial load complete after a short delay
         setTimeout(() => setInitialLoad(false), 100);
     }, []);
 
-    // Auto-save when settings change (debounced)
     useEffect(() => {
         if (initialLoad || loading) return;
         
@@ -99,6 +106,25 @@ export default function SettingsPage() {
 
         return () => clearTimeout(timeout);
     }, [settings, initialLoad, loading]);
+
+    const handleMaxTokensChange = (value: string) => {
+        setMaxTokensInput(value);
+        const num = parseInt(value);
+        if (!isNaN(num) && num >= 64 && num <= 4096) {
+            setSettings({ ...settings, maxTokens: num });
+        }
+    };
+
+    const handleMaxTokensBlur = () => {
+        const num = parseInt(maxTokensInput);
+        if (isNaN(num) || num < 64) {
+            setMaxTokensInput("64");
+            setSettings({ ...settings, maxTokens: 64 });
+        } else if (num > 4096) {
+            setMaxTokensInput("4096");
+            setSettings({ ...settings, maxTokens: 4096 });
+        }
+    };
 
     const saveSettings = () => {
         setSaving(true);
@@ -151,7 +177,6 @@ export default function SettingsPage() {
     return (
         <div className="min-h-screen bg-black text-white">
             <div className="max-w-3xl mx-auto px-6 py-8 space-y-8">
-                {/* Header */}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -177,43 +202,88 @@ export default function SettingsPage() {
                         className={`rounded-full gap-2 ${hasChanges ? "bg-yellow-500 hover:bg-yellow-600" : "bg-matcha hover:bg-matcha-dark"} text-black`}
                     >
                         <Save className="w-4 h-4" />
-                        {saving ? "Saving..." : hasChanges ? "Unsaved" : "Saved ✓"}
+                        {saving ? "Saving..." : hasChanges ? "Unsaved" : "Saved"}
                     </Button>
                 </motion.div>
 
-                {/* System Prompt */}
                 <motion.section
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.1 }}
                     className="space-y-4"
                 >
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <Sparkles className="w-5 h-5 text-matcha" />
-                            <Label className="text-lg font-semibold">System Prompt</Label>
-                        </div>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSettings({ ...settings, systemPrompt: DEFAULT_SYSTEM_PROMPT })}
-                            className="text-xs text-zinc-500 hover:text-matcha"
-                        >
-                            Reset to Default
-                        </Button>
+                    <div className="flex items-center gap-2">
+                        <Sparkles className="w-5 h-5 text-matcha" />
+                        <Label className="text-lg font-semibold">System Prompts</Label>
                     </div>
-                    <Textarea
-                        value={settings.systemPrompt}
-                        onChange={(e) => setSettings({ ...settings, systemPrompt: e.target.value })}
-                        placeholder="Enter a custom system prompt to guide the AI's behavior..."
-                        className="min-h-[200px] rounded-2xl bg-zinc-900/50 border-zinc-800 focus:border-matcha font-mono text-sm"
-                    />
+                    <p className="text-xs text-zinc-500">
+                        SFW prompt is used for characters without NSFW tag. NSFW prompt is used for characters with NSFW tag.
+                    </p>
+                    
+                    <Tabs defaultValue="sfw" className="w-full">
+                        <TabsList className="grid w-full grid-cols-2 bg-zinc-900/50 rounded-full p-1">
+                            <TabsTrigger value="sfw" className="rounded-full data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400 gap-2">
+                                <Shield className="w-4 h-4" />
+                                SFW
+                            </TabsTrigger>
+                            <TabsTrigger value="nsfw" className="rounded-full data-[state=active]:bg-red-500/20 data-[state=active]:text-red-400 gap-2">
+                                <ShieldOff className="w-4 h-4" />
+                                NSFW
+                            </TabsTrigger>
+                        </TabsList>
+                        
+                        <TabsContent value="sfw" className="space-y-3 mt-4">
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm text-green-400 flex items-center gap-2">
+                                    <Shield className="w-4 h-4" />
+                                    Safe For Work Prompt
+                                </span>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setSettings({ ...settings, sfwSystemPrompt: DEFAULT_SFW_SYSTEM_PROMPT })}
+                                    className="text-xs text-zinc-500 hover:text-matcha"
+                                >
+                                    Reset to Default
+                                </Button>
+                            </div>
+                            <Textarea
+                                value={settings.sfwSystemPrompt}
+                                onChange={(e) => setSettings({ ...settings, sfwSystemPrompt: e.target.value })}
+                                placeholder="Enter SFW system prompt..."
+                                className="min-h-[200px] rounded-2xl bg-zinc-900/50 border-zinc-800 focus:border-green-500 font-mono text-sm"
+                            />
+                        </TabsContent>
+                        
+                        <TabsContent value="nsfw" className="space-y-3 mt-4">
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm text-red-400 flex items-center gap-2">
+                                    <ShieldOff className="w-4 h-4" />
+                                    Not Safe For Work Prompt
+                                </span>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setSettings({ ...settings, nsfwSystemPrompt: DEFAULT_NSFW_SYSTEM_PROMPT })}
+                                    className="text-xs text-zinc-500 hover:text-matcha"
+                                >
+                                    Reset to Default
+                                </Button>
+                            </div>
+                            <Textarea
+                                value={settings.nsfwSystemPrompt}
+                                onChange={(e) => setSettings({ ...settings, nsfwSystemPrompt: e.target.value })}
+                                placeholder="Enter NSFW system prompt..."
+                                className="min-h-[200px] rounded-2xl bg-zinc-900/50 border-zinc-800 focus:border-red-500 font-mono text-sm"
+                            />
+                        </TabsContent>
+                    </Tabs>
+                    
                     <p className="text-xs text-zinc-600">
                         Use {"{{char}}"} for character name and {"{{user}}"} for user name placeholders.
                     </p>
                 </motion.section>
 
-                {/* Max Tokens */}
                 <motion.section
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -223,18 +293,17 @@ export default function SettingsPage() {
                     <Label className="text-lg font-semibold">Max Token Limit</Label>
                     <div className="flex items-center gap-4">
                         <Input
-                            type="number"
-                            value={settings.maxTokens}
-                            onChange={(e) => setSettings({ ...settings, maxTokens: parseInt(e.target.value) || 512 })}
-                            min={64}
-                            max={4096}
+                            type="text"
+                            inputMode="numeric"
+                            value={maxTokensInput}
+                            onChange={(e) => handleMaxTokensChange(e.target.value)}
+                            onBlur={handleMaxTokensBlur}
                             className="w-32 rounded-full bg-zinc-900/50 border-zinc-800 focus:border-matcha"
                         />
                         <span className="text-sm text-zinc-500">tokens (64 - 4096)</span>
                     </div>
                 </motion.section>
 
-                {/* Model Manager */}
                 <motion.section
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}

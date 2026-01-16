@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { callOpenRouter, parseThinkingContent, ChatMessage, DEFAULT_SYSTEM_PROMPT } from "@/lib/openrouter";
+import { callOpenRouter, parseThinkingContent, ChatMessage, DEFAULT_NSFW_SYSTEM_PROMPT } from "@/lib/openrouter";
 
 function replacePlaceholders(text: string, charName: string, userName: string): string {
   return text
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
       contextSummary
     } = body;
 
-    const basePrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    const basePrompt = systemPrompt || DEFAULT_NSFW_SYSTEM_PROMPT;
     
     const userName = userPersona?.split(":")[0]?.trim() || "User";
     const charName = characterName || "Character";

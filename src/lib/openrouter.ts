@@ -1,7 +1,7 @@
 // OpenRouter API client with key rotation
 // Keys should be stored in environment variables (comma-separated for multiple keys)
 
-export { DEFAULT_MODELS, DEFAULT_SYSTEM_PROMPT, type ModelConfig } from "./constants";
+export { DEFAULT_MODELS, DEFAULT_SFW_SYSTEM_PROMPT, DEFAULT_NSFW_SYSTEM_PROMPT, type ModelConfig } from "./constants";
 
 function getApiKeys(): string[] {
   const envKeys = process.env.OPENROUTER_API_KEYS || process.env.OPENROUTER_API_KEY || "";

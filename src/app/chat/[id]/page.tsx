@@ -46,7 +46,7 @@ import {
   Check,
   Users
 } from "lucide-react";
-import { DEFAULT_MODELS, ModelConfig, summarizeContext, DEFAULT_SYSTEM_PROMPT } from "@/lib/openrouter";
+import { DEFAULT_MODELS, ModelConfig, summarizeContext, DEFAULT_SFW_SYSTEM_PROMPT, DEFAULT_NSFW_SYSTEM_PROMPT } from "@/lib/openrouter";
 
 function parseNarrationContent(content: string): React.ReactNode {
   const regex = /(\*[^*]+\*)|("[^"]+")/;
@@ -101,7 +101,7 @@ export default function ChatPage() {
   const [models, setModels] = useState<ModelConfig[]>(DEFAULT_MODELS);
   const [selectedModel, setSelectedModel] = useState<ModelConfig>(DEFAULT_MODELS[0]);
   const [imageInput, setImageInput] = useState<string | null>(null);
-  const [settings, setSettings] = useState({ systemPrompt: DEFAULT_SYSTEM_PROMPT, maxTokens: 512 });
+  const [settings, setSettings] = useState({ sfwSystemPrompt: DEFAULT_SFW_SYSTEM_PROMPT, nsfwSystemPrompt: DEFAULT_NSFW_SYSTEM_PROMPT, maxTokens: 512 });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const saveMessageToDb = async (message: Message, currentChatId: string) => {
@@ -152,7 +152,8 @@ export default function ChatPage() {
       try {
         const parsed = JSON.parse(savedSettings);
         setSettings({
-          systemPrompt: parsed.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+          sfwSystemPrompt: parsed.sfwSystemPrompt || parsed.systemPrompt || DEFAULT_SFW_SYSTEM_PROMPT,
+          nsfwSystemPrompt: parsed.nsfwSystemPrompt || DEFAULT_NSFW_SYSTEM_PROMPT,
           maxTokens: parsed.maxTokens || 512,
         });
         if (parsed.models?.length > 0) {
@@ -303,7 +304,7 @@ export default function ChatPage() {
             messages: recentMessages,
             model: selectedModel.id,
             maxTokens: settings.maxTokens,
-            systemPrompt: settings.systemPrompt,
+            systemPrompt: character?.tags?.includes("NSFW") ? settings.nsfwSystemPrompt : settings.sfwSystemPrompt,
             characterName: character?.name,
             characterPersonality: character?.personality,
             characterScenario: character?.scenario,
