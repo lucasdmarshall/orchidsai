@@ -1,5 +1,11 @@
 import { NextRequest } from "next/server";
-import { callOpenRouter, parseThinkingContent, ChatMessage, DEFAULT_SFW_SYSTEM_PROMPT, DEFAULT_NSFW_SYSTEM_PROMPT, replacePlaceholders } from "@/lib/openrouter";
+import { callOpenRouter, parseThinkingContent, ChatMessage, DEFAULT_SYSTEM_PROMPT } from "@/lib/openrouter";
+
+function replacePlaceholders(text: string, charName: string, userName: string): string {
+  return text
+    .replace(/\{\{char\}\}/gi, charName)
+    .replace(/\{\{user\}\}/gi, userName);
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -8,37 +14,26 @@ export async function POST(req: NextRequest) {
         messages,
         model = "deepseek/deepseek-r1-0528:free",
         maxTokens = 1024,
-      sfwSystemPrompt,
-      nsfwSystemPrompt,
+      systemPrompt,
       characterName,
       characterPersonality,
       characterScenario,
       characterExampleDialogue,
-      characterContentRating = "nsfw",
       userPersona,
       contextSummary
     } = body;
 
-    // Select system prompt based on character content rating
-    const isSfw = characterContentRating === "sfw";
-    const defaultPrompt = isSfw ? DEFAULT_SFW_SYSTEM_PROMPT : DEFAULT_NSFW_SYSTEM_PROMPT;
-    const basePrompt = isSfw 
-      ? (sfwSystemPrompt || defaultPrompt)
-      : (nsfwSystemPrompt || defaultPrompt);
+    const basePrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
     
-    // Extract user name from persona
     const userName = userPersona?.split(":")[0]?.trim() || "User";
     const charName = characterName || "Character";
     
-    // Replace placeholders in all character fields
     const processedPersonality = replacePlaceholders(characterPersonality || "", charName, userName);
     const processedScenario = replacePlaceholders(characterScenario || "", charName, userName);
     const processedExampleDialogue = replacePlaceholders(characterExampleDialogue || "", charName, userName);
     
-    // Replace placeholders and build character context
     let systemContent = replacePlaceholders(basePrompt, charName, userName);
 
-    // Add character definition block
     if (characterName) {
       systemContent += `\n\n### CHARACTER DEFINITION:
 **Name:** ${charName}
@@ -53,14 +48,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Add user persona context
     if (userPersona) {
       systemContent += `\n\n### USER PERSONA:
 ${userPersona}
 (Acknowledge and respond to the user according to their persona.)`;
     }
 
-    // Add conversation context summary for continuity (last 2 messages)
     if (contextSummary) {
       const formattedContext = replacePlaceholders(contextSummary, charName, userName);
       
@@ -69,12 +62,10 @@ ${formattedContext}
 (Continue from this context naturally. Don't repeat what was said.)`;
     }
 
-    // Build messages array for OpenRouter
     const apiMessages: ChatMessage[] = [
       { role: "system", content: systemContent }
     ];
 
-      // Check if model supports images (based on common vision model patterns)
       const isVisionModel = model.includes("vision") || 
                             model.includes("-vl") || 
                             model.includes("gemini") ||
@@ -82,12 +73,9 @@ ${formattedContext}
                             model.includes("claude-3") ||
                             model.includes("llama-4");
 
-    // Add conversation messages
     if (Array.isArray(messages)) {
       for (const msg of messages) {
         if (msg.image && isVisionModel) {
-          // Handle image input for vision-capable models
-          // OpenRouter expects this format for multimodal
           apiMessages.push({
             role: msg.role,
             content: [
@@ -96,13 +84,12 @@ ${formattedContext}
                 type: "image_url", 
                 image_url: { 
                   url: msg.image,
-                  detail: "auto"  // Let the model decide detail level
+                  detail: "auto"
                 } 
               }
             ]
           });
         } else if (msg.image && !isVisionModel) {
-          // For non-vision models, just send text with a note about the image
           apiMessages.push({
             role: msg.role,
             content: `${msg.content || ""}\n[User shared an image, but this model cannot process images]`
@@ -129,7 +116,6 @@ ${formattedContext}
       });
     }
 
-    // Handle streaming response
     const reader = response.body?.getReader();
     if (!reader) {
       return new Response("No response body", { status: 500 });
@@ -163,7 +149,6 @@ ${formattedContext}
                   if (content) {
                     fullContent += content;
 
-                    // Parse thinking content and send structured response
                     const { thinking, response: cleanResponse } = parseThinkingContent(fullContent);
 
                     controller.enqueue(encoder.encode(
