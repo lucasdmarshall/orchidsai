@@ -147,20 +147,25 @@ export default function ChatPage() {
   };
 
   useEffect(() => {
-    const savedSettings = localStorage.getItem("orchids_settings");
-    if (savedSettings) {
+    async function fetchSettings() {
       try {
-        const parsed = JSON.parse(savedSettings);
-        setSettings({
-          sfwSystemPrompt: parsed.sfwSystemPrompt || parsed.systemPrompt || DEFAULT_SFW_SYSTEM_PROMPT,
-          nsfwSystemPrompt: parsed.nsfwSystemPrompt || DEFAULT_NSFW_SYSTEM_PROMPT,
-          maxTokens: parsed.maxTokens || 512,
-        });
-        if (parsed.models?.length > 0) {
-          setModels(parsed.models);
+        const res = await fetch("/api/settings");
+        if (res.ok) {
+          const data = await res.json();
+          setSettings({
+            sfwSystemPrompt: data.sfwSystemPrompt || DEFAULT_SFW_SYSTEM_PROMPT,
+            nsfwSystemPrompt: data.nsfwSystemPrompt || DEFAULT_NSFW_SYSTEM_PROMPT,
+            maxTokens: data.maxTokens || 512,
+          });
+          if (data.models?.length > 0) {
+            setModels(data.models);
+          }
         }
-      } catch { }
+      } catch (error) {
+        console.error("Failed to fetch settings:", error);
+      }
     }
+    fetchSettings();
 
     const savedModel = localStorage.getItem("orchids_selected_model");
     if (savedModel) {
