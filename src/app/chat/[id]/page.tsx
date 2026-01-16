@@ -111,6 +111,7 @@ export default function ChatPage() {
       persona_id: persona?.id || null,
       role: message.role,
       content: message.content,
+      thinking: message.thinking || null,
     });
   };
 
@@ -207,6 +208,7 @@ export default function ChatPage() {
           id: m.id,
           role: m.role,
           content: m.content,
+          thinking: m.thinking || undefined,
           created_at: m.created_at,
         })));
       } else {
@@ -532,7 +534,7 @@ export default function ChatPage() {
         )}
       </AnimatePresence>
 
-      <div className="flex-1 overflow-y-auto p-4 pt-20 space-y-6 scroll-smooth custom-scrollbar" ref={scrollRef}>
+      <div className="flex-1 overflow-y-auto p-4 pt-24 pb-44 space-y-6 scroll-smooth custom-scrollbar" ref={scrollRef}>
         <div className="max-w-3xl mx-auto space-y-6">
           <AnimatePresence initial={false}>
             {messages.map((msg) => (
