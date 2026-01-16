@@ -38,7 +38,7 @@ import {
     Sparkles,
 } from "lucide-react";
 import Link from "next/link";
-import { DEFAULT_MODELS, ModelConfig, DEFAULT_SYSTEM_PROMPT } from "@/lib/openrouter";
+import { DEFAULT_MODELS, ModelConfig, DEFAULT_SYSTEM_PROMPT } from "@/lib/constants";
 
 interface SettingsData {
     systemPrompt: string;
