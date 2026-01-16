@@ -328,36 +328,44 @@ export default function ChatPage() {
         let fullContent = "";
         let fullThinking = "";
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+          let cleanContent = "";
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n").filter(Boolean);
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split("\n").filter(Boolean);
 
-          for (const line of lines) {
-            try {
-              const parsed = JSON.parse(line);
+            for (const line of lines) {
+              try {
+                const parsed = JSON.parse(line);
                 if (parsed.content) {
                   fullContent += parsed.content;
-                  // If we have fullContent from API (cleaned of think tags), use it
-                  setStreamingContent(parsed.fullContent !== undefined ? parsed.fullContent : fullContent);
+                  if (parsed.fullContent !== undefined) {
+                    cleanContent = parsed.fullContent;
+                    setStreamingContent(parsed.fullContent);
+                  } else {
+                    setStreamingContent(fullContent);
+                  }
                 }
-              if (parsed.thinking) {
-                fullThinking = parsed.thinking;
-                setStreamingThinking(fullThinking);
-              }
-            } catch { }
+                if (parsed.thinking) {
+                  fullThinking = parsed.thinking;
+                  setStreamingThinking(fullThinking);
+                }
+              } catch { }
+            }
           }
-        }
 
-        const aiMessage: Message = {
-          id: Math.random().toString(),
-          role: "assistant",
-          content: fullContent || "I apologize, I couldn't generate a response.",
-          thinking: fullThinking || undefined,
-          created_at: new Date().toISOString(),
-        };
+          const finalContent = cleanContent || fullContent.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+          
+          const aiMessage: Message = {
+            id: Math.random().toString(),
+            role: "assistant",
+            content: finalContent || "I apologize, I couldn't generate a response.",
+            thinking: fullThinking || undefined,
+            created_at: new Date().toISOString(),
+          };
         setMessages((prev) => [...prev, aiMessage]);
         await saveMessageToDb(aiMessage, chatId);
 
