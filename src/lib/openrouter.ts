@@ -80,6 +80,15 @@ export function parseThinkingContent(content: string): { thinking: string | null
     const response = content.replace(/<think>[\s\S]*?<\/think>/, "").trim();
     return { thinking, response };
   }
+  
+  // Handle incomplete thinking tags during streaming
+  if (content.includes("<think>")) {
+    const parts = content.split("<think>");
+    const thinking = parts[1].trim();
+    const response = parts[0].trim();
+    return { thinking, response: response || "" };
+  }
+  
   return { thinking: null, response: content };
 }
 
