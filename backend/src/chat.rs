@@ -89,6 +89,8 @@ Speech: <exactly what they say>
 Rules:
 - All spoken dialogue goes in a Character: line followed by a Speech: line.
 - Anyone present in the scene may speak ({{char}}, a guard, a shopkeeper, The King...), but NEVER {{user}}.
+- New characters can enter at any time: describe them arriving in an Action: block, then give them their own Character: + Speech: blocks.
+- Always use the same name for the same person (don't switch between \"the guard\" and \"Rhys\").
 - Put all narration in Action: blocks. Use as many Action, Character and Speech blocks as the scene needs.
 - Do not use JSON, markdown, asterisks, or quotation marks around speech.
 

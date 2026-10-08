@@ -8,55 +8,108 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 //   Character: <speaker name>
 //   Speech: <what they say>
 // parseScene turns that into narration blocks and one bubble per speech.
+// Any new speaker gets their own bubble automatically, and common slips from
+// the format are tolerated:
+//   The Guard: Halt!               (name used as the tag)
+//   Character: Guard (whispering)  (parenthetical becomes an inline action)
+//   Character: Guard               followed by a line without "Speech:"
 
 export type SceneSegment =
   | { kind: "action"; text: string }
   | { kind: "speech"; speaker: string; text: string };
 
-const TAG = /^\s*\**\s*(action|narration|character|speech)\s*\**\s*:\s*\**\s*(.*)$/i;
-const TAG_NAMES = ["action", "narration", "character", "speech"];
+const TAG = /^\s*\**\s*(action|narration|narrator|character|speech)\s*\**\s*:\s*\**\s*(.*)$/i;
+const TAG_NAMES = ["action", "narration", "narrator", "character", "speech"];
+// "Name: text" or "Name (whispering): text", where Name is a short name.
+const NAME_LINE = /^\s*\**\s*([^\s:*()"“”][^:*()"“”]{0,40}?)\s*(?:\(([^)]*)\))?\s*\**\s*:\s*\**\s*(.+)$/;
+// Labels that are not people.
+const NOT_SPEAKERS = new Set(["note", "ooc", "scene", "location", "setting", "time", "date", "summary", "thoughts"]);
+
+function looksLikeName(name: string): boolean {
+  const words = name.trim().split(/\s+/);
+  if (words.length === 0 || words.length > 4 || NOT_SPEAKERS.has(name.trim().toLowerCase())) return false;
+  // Latin names start with a capital ("The King", "Captain Rhys"); other scripts (e.g. Burmese) pass.
+  const first = words[0][0];
+  return first !== first.toLowerCase() || first === first.toUpperCase();
+}
+
+/** Splits "Guard (whispering)" into the name and a stage direction. */
+function splitSpeaker(raw: string): { name: string; direction: string } {
+  const m = raw.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+  return m ? { name: m[1].trim(), direction: m[2].trim() } : { name: raw.trim(), direction: "" };
+}
 
 /**
  * Returns null when the text is not in the tagged format (e.g. greetings or
  * older messages), so the caller can fall back to a single bubble.
- * With `streaming`, an unfinished last line that may still become a tag is
- * held back so it doesn't flash as body text.
+ * With `streaming`, an unfinished last line that may still become a tag or a
+ * speaker name is held back so it doesn't flash as narration.
  */
 export function parseScene(content: string, defaultSpeaker: string, streaming = false): SceneSegment[] | null {
   const lines = content.split("\n");
   if (streaming && lines.length > 0) {
-    const last = lines[lines.length - 1].replace(/[\s*]/g, "").toLowerCase();
-    if (last && !last.includes(":") && TAG_NAMES.some((t) => t.startsWith(last))) lines.pop();
+    const raw = lines[lines.length - 1];
+    const compact = raw.replace(/[\s*]/g, "").toLowerCase();
+    const maybeTag = compact && TAG_NAMES.some((t) => t.startsWith(compact));
+    const maybeName = raw.trim().length < 40 && looksLikeName(raw.replace(/[*(]/g, " ").trim() || "x") && !/^[*"“]/.test(raw.trim());
+    if (!raw.includes(":") && raw.trim() && (maybeTag || maybeName)) lines.pop();
   }
 
   const segments: SceneSegment[] = [];
-  let speaker: string | null = null;
-  let current: SceneSegment | null = null;
+  let pendingSpeaker = null as { name: string; direction: string } | null;
+  let current = null as SceneSegment | null;
   let tagged = false;
 
+  const startSpeech = (speaker: { name: string; direction: string } | null, text: string) => {
+    const who = speaker?.name || defaultSpeaker;
+    const direction = speaker?.direction ? `*${speaker.direction}* ` : "";
+    current = { kind: "speech", speaker: who, text: direction + stripQuotes(text) };
+    segments.push(current);
+    pendingSpeaker = null;
+  };
+
   for (const line of lines) {
-    const match = line.match(TAG);
-    if (match) {
+    const text = line.trim();
+    if (!text) continue;
+    const tag = line.match(TAG);
+    if (tag) {
       tagged = true;
-      const tag = match[1].toLowerCase();
-      const value = match[2].replace(/\**\s*$/, "").trim();
-      if (tag === "character") {
-        speaker = value;
-        current = null;
-      } else if (tag === "speech") {
-        current = { kind: "speech", speaker: speaker || defaultSpeaker, text: stripQuotes(value) };
-        segments.push(current);
+      const kind = tag[1].toLowerCase();
+      const value = tag[2].replace(/\**\s*$/, "").trim();
+      if (kind === "character") {
+        // Tolerate "Character: Name: what they say" on one line.
+        const inline = value.match(/^([^:]{1,40}):\s*(.+)$/);
+        if (inline) {
+          startSpeech(splitSpeaker(inline[1]), inline[2]);
+        } else {
+          pendingSpeaker = splitSpeaker(value);
+          current = null;
+        }
+      } else if (kind === "speech") {
+        startSpeech(pendingSpeaker ?? (current?.kind === "speech" ? { name: current.speaker, direction: "" } : null), value);
       } else {
         current = { kind: "action", text: value };
         segments.push(current);
+        pendingSpeaker = null;
       }
-    } else if (line.trim()) {
-      if (current) {
-        current.text += (current.text ? "\n" : "") + line.trim();
-      } else {
-        current = { kind: "action", text: line.trim() };
-        segments.push(current);
-      }
+      continue;
+    }
+
+    const named = line.match(NAME_LINE);
+    if (named && looksLikeName(named[1])) {
+      tagged = true;
+      startSpeech({ name: named[1].trim(), direction: (named[2] || "").trim() }, named[3].replace(/\**\s*$/, ""));
+      continue;
+    }
+
+    if (pendingSpeaker) {
+      // "Character: X" followed by speech without the "Speech:" tag.
+      startSpeech(pendingSpeaker, text);
+    } else if (current) {
+      current.text += (current.text ? "\n" : "") + text;
+    } else {
+      current = { kind: "action", text };
+      segments.push(current);
     }
   }
 
@@ -68,20 +121,25 @@ export function parseScene(content: string, defaultSpeaker: string, streaming = 
 }
 
 function stripQuotes(text: string): string {
-  return text.replace(/^["“]/, "").replace(/["”]$/, "");
+  return text.trim().replace(/^["\u201c]/, "").replace(/["\u201d]$/, "");
 }
 
 /** Stable color per speaker name for avatars of side characters. */
 function speakerColor(name: string): string {
   const colors = ["bg-sky-600", "bg-amber-600", "bg-rose-600", "bg-violet-600", "bg-emerald-600", "bg-orange-600", "bg-cyan-600"];
   let hash = 0;
-  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
+  for (const ch of normalizeName(name)) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
   return colors[Math.abs(hash) % colors.length];
 }
 
+/** "The King" and "king" are the same speaker. */
+function normalizeName(name: string): string {
+  return name.trim().toLowerCase().replace(/^the\s+/, "");
+}
+
 function isMainCharacter(speaker: string, characterName: string): boolean {
-  const a = speaker.trim().toLowerCase();
-  const b = characterName.trim().toLowerCase();
+  const a = normalizeName(speaker);
+  const b = normalizeName(characterName);
   return a === b || (a.length > 2 && (b.startsWith(a) || a.startsWith(b)));
 }
 
