@@ -46,11 +46,12 @@ import {
   Check,
   Users
 } from "lucide-react";
+import { SceneMessage, parseScene } from "@/components/SceneMessage";
 import { DEFAULT_MODELS, ModelConfig, summarizeContext, DEFAULT_SFW_SYSTEM_PROMPT, DEFAULT_NSFW_SYSTEM_PROMPT } from "@/lib/openrouter";
 
 // Colors *actions* and "speech". Works on partial text while streaming: an
 // unclosed * or " styles everything after it until the closing mark arrives.
-function parseNarrationContent(content: string): React.ReactNode {
+function parseNarrationContent(content: string, plainClass = "text-zinc-400"): React.ReactNode {
   type Mode = "text" | "action" | "speech";
   const parts: { mode: Mode; text: string }[] = [];
   let mode = "text" as Mode;
@@ -93,7 +94,7 @@ function parseNarrationContent(content: string): React.ReactNode {
         </span>
       );
     }
-    return <span key={i} className="text-zinc-400">{part.text}</span>;
+    return <span key={i} className={plainClass}>{part.text}</span>;
   });
 }
 
@@ -443,6 +444,8 @@ export default function ChatPage() {
     router.push("/");
   };
 
+  const renderSpeech = (text: string) => parseNarrationContent(text, "text-white");
+
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen">
       <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-matcha"></div>
@@ -574,7 +577,40 @@ export default function ChatPage() {
       <div className="flex-1 overflow-y-auto p-4 pt-24 pb-44 space-y-6 custom-scrollbar" ref={scrollRef} onScroll={handleScroll}>
         <div className="max-w-3xl mx-auto space-y-6">
           <AnimatePresence initial={false}>
-            {messages.map((msg) => (
+            {messages.map((msg) => {
+              const scene = msg.role === "assistant" ? parseScene(msg.content, character.name) : null;
+              if (scene) {
+                return (
+                  <motion.div
+                    key={msg.id}
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    className="space-y-2"
+                  >
+                    {msg.thinking && (
+                      <Collapsible className="pl-11">
+                        <CollapsibleTrigger className="flex items-center gap-2 text-xs text-purple-400 hover:text-purple-300 transition-colors group">
+                          <Brain className="w-3 h-3" />
+                          <span>{character.name} is thinking...</span>
+                          <ChevronDown className="w-3 h-3 group-data-[state=open]:rotate-180 transition-transform" />
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <div className="mt-2 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200 whitespace-pre-wrap">
+                            {msg.thinking}
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+                    <SceneMessage
+                      segments={scene}
+                      characterName={character.name}
+                      avatarUrl={character.avatar_url}
+                      renderText={renderSpeech}
+                    />
+                  </motion.div>
+                );
+              }
+              return (
               <motion.div
                 key={msg.id}
                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -622,10 +658,35 @@ export default function ChatPage() {
                   </div>
                 </div>
               </motion.div>
-            ))}
+              );
+            })}
           </AnimatePresence>
 
-          {isTyping && (
+          {isTyping && (() => {
+            const liveScene = streamingContent ? parseScene(streamingContent, character.name, true) : null;
+            if (liveScene && liveScene.length > 0) {
+              return (
+                <div className="space-y-2">
+                  {streamingThinking && (
+                    <div className="ml-11 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Brain className="w-3 h-3 text-purple-400" />
+                        <span className="text-purple-400 font-medium">{character.name} is thinking...</span>
+                      </div>
+                      <div className="whitespace-pre-wrap opacity-80">{streamingThinking}</div>
+                    </div>
+                  )}
+                  <SceneMessage
+                    segments={liveScene}
+                    characterName={character.name}
+                    avatarUrl={character.avatar_url}
+                    renderText={renderSpeech}
+                    streaming
+                  />
+                </div>
+              );
+            }
+            return (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -650,7 +711,7 @@ export default function ChatPage() {
                         </div>
                       </div>
                     )}
-                  {streamingContent ? (
+                  {streamingContent && liveScene === null ? (
                     <div className="p-4 rounded-[1.5rem] text-sm leading-relaxed bg-zinc-900 border border-zinc-800 rounded-tl-none text-zinc-200">
                       {parseNarrationContent(streamingContent)}
                       <span className="inline-block w-1 h-4 bg-matcha ml-1 animate-pulse" />
@@ -668,7 +729,8 @@ export default function ChatPage() {
                 </div>
               </div>
             </motion.div>
-          )}
+            );
+          })()}
         </div>
       </div>
 

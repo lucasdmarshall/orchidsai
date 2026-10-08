@@ -78,8 +78,30 @@ fn default_max_tokens() -> u32 {
     1024
 }
 
+/// Appended to every system prompt. The site splits replies in this format
+/// into one bubble per speaker (src/components/SceneMessage.tsx).
+const OUTPUT_FORMAT: &str = "### OUTPUT FORMAT (STRICT - overrides any formatting rules above)
+Write your whole reply as blocks, each starting on its own line:
+Action: <narration - what happens, actions, body language, surroundings>
+Character: <name of who speaks>
+Speech: <exactly what they say>
+
+Rules:
+- All spoken dialogue goes in a Character: line followed by a Speech: line.
+- Anyone present in the scene may speak ({{char}}, a guard, a shopkeeper, The King...), but NEVER {{user}}.
+- Put all narration in Action: blocks. Use as many Action, Character and Speech blocks as the scene needs.
+- Do not use JSON, markdown, asterisks, or quotation marks around speech.
+
+Example:
+Action: The great doors swing open and the hall falls silent.
+Character: The King
+Speech: Who dares interrupt my court?
+Action: {{char}} steps forward and bows low.
+Character: {{char}}
+Speech: Forgive me, Your Majesty. I bring urgent news.";
+
 const FALLBACK_SYSTEM_PROMPT: &str = "You are {{char}}, roleplaying with {{user}}. Stay in character, \
-write vivid replies with actions in *asterisks* and speech in \"quotes\", and never speak for {{user}}.";
+write vivid replies, and never speak or act for {{user}}.";
 
 fn replace_placeholders(text: &str, char_name: &str, user_name: &str) -> String {
     static CHAR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\{\{char\}\}").unwrap());
@@ -130,6 +152,8 @@ fn build_system_prompt(req: &ChatRequest) -> String {
             "\n\n### RECENT CONTEXT (last 4 exchanges):\n{context}\n(Continue from this context naturally. Don't repeat what was said.)"
         ));
     }
+    prompt.push_str("\n\n");
+    prompt.push_str(&replace_placeholders(OUTPUT_FORMAT, char_name, user_name));
     prompt
 }
 
