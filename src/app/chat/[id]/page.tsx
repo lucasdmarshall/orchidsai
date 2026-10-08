@@ -48,26 +48,52 @@ import {
 } from "lucide-react";
 import { DEFAULT_MODELS, ModelConfig, summarizeContext, DEFAULT_SFW_SYSTEM_PROMPT, DEFAULT_NSFW_SYSTEM_PROMPT } from "@/lib/openrouter";
 
+// Colors *actions* and "speech". Works on partial text while streaming: an
+// unclosed * or " styles everything after it until the closing mark arrives.
 function parseNarrationContent(content: string): React.ReactNode {
-  const regex = /(\*[^*]+\*)|("[^"]+")/;
-  const parts = content.split(regex);
+  type Mode = "text" | "action" | "speech";
+  const parts: { mode: Mode; text: string }[] = [];
+  let mode = "text" as Mode;
+  let buf = "";
+  const flush = (next: Mode) => {
+    if (buf) parts.push({ mode, text: buf });
+    buf = "";
+    mode = next;
+  };
 
-  return parts.filter(Boolean).map((part, i) => {
-    if (part.startsWith('*') && part.endsWith('*')) {
+  for (const ch of content) {
+    if (ch === "*" && mode !== "speech") {
+      flush(mode === "action" ? "text" : "action");
+    } else if ((ch === '"' || ch === "\u201c" || ch === "\u201d") && mode !== "action") {
+      if (mode === "speech") {
+        buf += ch;
+        flush("text");
+      } else {
+        flush("speech");
+        buf = ch;
+      }
+    } else {
+      buf += ch;
+    }
+  }
+  flush(mode);
+
+  return parts.map((part, i) => {
+    if (part.mode === "action") {
       return (
         <span key={i} className="text-red-500 italic font-medium">
-          {part.slice(1, -1)}
+          {part.text}
         </span>
       );
     }
-    if (part.startsWith('"') && part.endsWith('"')) {
+    if (part.mode === "speech") {
       return (
         <span key={i} className="text-white font-bold">
-          {part}
+          {part.text}
         </span>
       );
     }
-    return <span key={i} className="text-zinc-400">{part}</span>;
+    return <span key={i} className="text-zinc-400">{part.text}</span>;
   });
 }
 
@@ -96,6 +122,10 @@ export default function ChatPage() {
   const [streamingContent, setStreamingContent] = useState("");
   const [streamingThinking, setStreamingThinking] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Follow new text only while the reader is at the bottom; scrolling up stops it.
+  const stickToBottom = useRef(true);
+  const lastScrollTop = useRef(0);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [chatId, setChatId] = useState<string | null>(null);
 
   const [models, setModels] = useState<ModelConfig[]>(DEFAULT_MODELS);
@@ -215,11 +245,29 @@ export default function ChatPage() {
     });
   }, [params.id, searchParams]);
 
+  const scrollToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current = true;
+    setShowJumpToBottom(false);
+    el.scrollTop = el.scrollHeight;
+    lastScrollTop.current = el.scrollTop;
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    // New content only ever pushes scrollTop down, so moving up means the reader scrolled.
+    if (el.scrollTop < lastScrollTop.current - 2) stickToBottom.current = false;
+    if (atBottom) stickToBottom.current = true;
+    lastScrollTop.current = el.scrollTop;
+    setShowJumpToBottom(!stickToBottom.current);
+  }, []);
+
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, isTyping, streamingContent]);
+    if (stickToBottom.current) scrollToBottom();
+  }, [messages, isTyping, streamingContent, streamingThinking, scrollToBottom]);
 
   const selectModel = (model: ModelConfig) => {
     setSelectedModel(model);
@@ -267,6 +315,7 @@ export default function ChatPage() {
         messages.slice(-4).map(m => ({ role: m.role, content: m.content }))
       ) : "";
 
+      scrollToBottom();
       setMessages((prev) => [...prev, userMessage]);
       setInput("");
       setImageInput(null);
@@ -522,7 +571,7 @@ export default function ChatPage() {
         )}
       </AnimatePresence>
 
-      <div className="flex-1 overflow-y-auto p-4 pt-24 pb-44 space-y-6 scroll-smooth custom-scrollbar" ref={scrollRef}>
+      <div className="flex-1 overflow-y-auto p-4 pt-24 pb-44 space-y-6 custom-scrollbar" ref={scrollRef} onScroll={handleScroll}>
         <div className="max-w-3xl mx-auto space-y-6">
           <AnimatePresence initial={false}>
             {messages.map((msg) => (
@@ -603,7 +652,7 @@ export default function ChatPage() {
                     )}
                   {streamingContent ? (
                     <div className="p-4 rounded-[1.5rem] text-sm leading-relaxed bg-zinc-900 border border-zinc-800 rounded-tl-none text-zinc-200">
-                      {streamingContent}
+                      {parseNarrationContent(streamingContent)}
                       <span className="inline-block w-1 h-4 bg-matcha ml-1 animate-pulse" />
                     </div>
                   ) : (
@@ -624,6 +673,16 @@ export default function ChatPage() {
       </div>
 
       <div className="fixed bottom-[4.5rem] left-0 right-0 p-4 bg-black/80 backdrop-blur-xl border-t border-white/5 z-30">
+        {showJumpToBottom && (
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            aria-label="Scroll to latest message"
+            className="absolute -top-12 left-1/2 -translate-x-1/2 w-9 h-9 rounded-full bg-zinc-800 border border-white/10 text-white flex items-center justify-center shadow-lg hover:bg-zinc-700"
+          >
+            <ChevronDown className="w-5 h-5" />
+          </button>
+        )}
         <form onSubmit={handleSend} className="max-w-3xl mx-auto relative group">
           {/* Image preview */}
           {imageInput && (
