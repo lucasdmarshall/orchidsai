@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { DEFAULT_MODELS, ModelConfig, DEFAULT_SFW_SYSTEM_PROMPT, DEFAULT_NSFW_SYSTEM_PROMPT } from "@/lib/constants";
+import { api } from "@/lib/api";
 
 interface SettingsData {
     sfwSystemPrompt: string;
@@ -71,37 +72,34 @@ export default function SettingsPage() {
     const [initialLoad, setInitialLoad] = useState(true);
 
     useEffect(() => {
-        const saved = localStorage.getItem("orchids_settings");
-        if (saved) {
-            try {
-                const parsed = JSON.parse(saved);
+        api.settings
+            .get()
+            .then((saved) => {
                 const loadedSettings = {
-                    sfwSystemPrompt: parsed.sfwSystemPrompt || parsed.systemPrompt || DEFAULT_SFW_SYSTEM_PROMPT,
-                    nsfwSystemPrompt: parsed.nsfwSystemPrompt || DEFAULT_NSFW_SYSTEM_PROMPT,
-                    maxTokens: parsed.maxTokens || 512,
-                    models: parsed.models || DEFAULT_MODELS,
+                    sfwSystemPrompt: saved.sfwSystemPrompt || DEFAULT_SFW_SYSTEM_PROMPT,
+                    nsfwSystemPrompt: saved.nsfwSystemPrompt || DEFAULT_NSFW_SYSTEM_PROMPT,
+                    maxTokens: saved.maxTokens || 512,
+                    models: saved.models && saved.models.length > 0 ? saved.models : DEFAULT_MODELS,
                 };
                 setSettings(loadedSettings);
                 setMaxTokensInput(String(loadedSettings.maxTokens));
-            } catch {
-                setSettings({ sfwSystemPrompt: DEFAULT_SFW_SYSTEM_PROMPT, nsfwSystemPrompt: DEFAULT_NSFW_SYSTEM_PROMPT, maxTokens: 512, models: DEFAULT_MODELS });
-                setMaxTokensInput("512");
-            }
-        } else {
-            setSettings({ sfwSystemPrompt: DEFAULT_SFW_SYSTEM_PROMPT, nsfwSystemPrompt: DEFAULT_NSFW_SYSTEM_PROMPT, maxTokens: 512, models: DEFAULT_MODELS });
-            setMaxTokensInput("512");
-        }
-        setLoading(false);
-        setTimeout(() => setInitialLoad(false), 100);
+            })
+            .catch(() => toast.error("Failed to load settings"))
+            .finally(() => {
+                setLoading(false);
+                setTimeout(() => setInitialLoad(false), 100);
+            });
     }, []);
 
     useEffect(() => {
         if (initialLoad || loading) return;
-        
+
         setHasChanges(true);
         const timeout = setTimeout(() => {
-            localStorage.setItem("orchids_settings", JSON.stringify(settings));
-            setHasChanges(false);
+            api.settings
+                .save(settings)
+                .then(() => setHasChanges(false))
+                .catch(() => toast.error("Failed to save settings"));
         }, 500);
 
         return () => clearTimeout(timeout);
@@ -126,14 +124,17 @@ export default function SettingsPage() {
         }
     };
 
-    const saveSettings = () => {
+    const saveSettings = async () => {
         setSaving(true);
-        localStorage.setItem("orchids_settings", JSON.stringify(settings));
-        setHasChanges(false);
-        setTimeout(() => {
-            setSaving(false);
+        try {
+            await api.settings.save(settings);
+            setHasChanges(false);
             toast.success("Settings saved!");
-        }, 300);
+        } catch {
+            toast.error("Failed to save settings");
+        } finally {
+            setSaving(false);
+        }
     };
 
     const addModel = () => {

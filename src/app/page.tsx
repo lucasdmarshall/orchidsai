@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
 import { CharacterCard } from "@/components/CharacterCard";
 import { Input } from "@/components/ui/input";
 import { Search, Sparkles, TrendingUp, Shield, ShieldAlert, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
@@ -45,11 +45,7 @@ export default function Home() {
 
   useEffect(() => {
     async function fetchTags() {
-      const { data } = await supabase
-        .from("tags")
-        .select("*")
-        .neq("type", "content_rating")
-        .order("name");
+      const data = await api.tags().catch(() => null);
       if (data) setTags(data);
     }
     fetchTags();
@@ -62,45 +58,22 @@ export default function Home() {
       setLoadingMore(true);
     }
 
-    let query = supabase
-      .from("characters")
-      .select("*", { count: "exact" })
-      .order("created_at", { ascending: false })
-      .range(pageNum * ITEMS_PER_PAGE, (pageNum + 1) * ITEMS_PER_PAGE - 1);
-
-    if (contentFilter !== "all") {
-      query = query.eq("content_rating", contentFilter);
-    }
-
-    if (search) {
-      query = query.or(`name.ilike.%${search}%,title.ilike.%${search}%`);
-    }
-
-    const { data: chars, count } = await query;
-
-    if (chars) {
-      const { data: characterTags } = await supabase
-        .from("character_tags")
-        .select("character_id, tags(id, name, color, slug, type)")
-        .in("character_id", chars.map((c) => c.id));
-
-      const tagsByCharacter = new Map<string, Tag[]>();
-      characterTags?.forEach((ct: { character_id: string; tags: Tag }) => {
-        const existing = tagsByCharacter.get(ct.character_id) || [];
-        if (ct.tags) existing.push(ct.tags);
-        tagsByCharacter.set(ct.character_id, existing);
+    const result = await api.characters
+      .list({
+        page: pageNum,
+        limit: ITEMS_PER_PAGE,
+        rating: contentFilter === "all" ? undefined : contentFilter,
+        search,
+        tag: selectedTag,
+      })
+      .catch((error) => {
+        console.error("Failed to load characters:", error);
+        return null;
       });
 
-      let enrichedChars = chars.map((char) => ({
-        ...char,
-        tags: tagsByCharacter.get(char.id) || [],
-      }));
-
-      if (selectedTag) {
-        enrichedChars = enrichedChars.filter(char => 
-          char.tags?.some(t => t.slug === selectedTag)
-        );
-      }
+    if (result) {
+      const { items: chars, total: count } = result;
+      const enrichedChars = chars;
 
       if (reset) {
         setCharacters(enrichedChars);

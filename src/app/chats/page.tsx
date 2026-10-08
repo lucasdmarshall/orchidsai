@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { MessageSquare, Trash2, Clock } from "lucide-react";
@@ -31,10 +31,7 @@ export default function ChatsPage() {
   const [loading, setLoading] = useState(true);
 
   const runJanitor = useCallback(async () => {
-    const { data: allChats } = await supabase
-      .from("chats")
-      .select("id, character_id, updated_at")
-      .order("updated_at", { ascending: false });
+    const allChats = await api.chats.list().catch(() => null);
 
     if (!allChats) return;
 
@@ -50,10 +47,7 @@ export default function ChatsPage() {
     }
 
     if (chatsToDelete.length > 0) {
-      for (const chatId of chatsToDelete) {
-        await supabase.from("messages").delete().eq("chat_id", chatId);
-      }
-      await supabase.from("chats").delete().in("id", chatsToDelete);
+      await Promise.all(chatsToDelete.map((chatId) => api.chats.remove(chatId).catch(() => {})));
       toast.info(`Cleaned up ${chatsToDelete.length} old chat(s)`);
     }
   }, []);
@@ -62,37 +56,15 @@ export default function ChatsPage() {
     async function fetchChats() {
       await runJanitor();
 
-      const { data: chatsData, error } = await supabase
-        .from("chats")
-        .select(`
-          *,
-          character:characters(id, name, title, avatar_url)
-        `)
-        .order("updated_at", { ascending: false });
+      const chatsData = await api.chats.list().catch(() => null);
 
       if (chatsData) {
-        const chatsWithMessages = await Promise.all(
-          chatsData.map(async (chat: any) => {
-            const { data: messages } = await supabase
-              .from("messages")
-              .select("content")
-              .eq("chat_id", chat.id)
-              .order("created_at", { ascending: false })
-              .limit(1);
-
-            const { count } = await supabase
-              .from("messages")
-              .select("*", { count: "exact", head: true })
-              .eq("chat_id", chat.id);
-
-            return {
-              ...chat,
-              last_message: messages?.[0]?.content || "No messages yet",
-              message_count: count || 0,
-            };
-          })
-        );
-        setChats(chatsWithMessages);
+        setChats(chatsData.map((chat) => ({
+          ...chat,
+          last_message: chat.last_message || "No messages yet",
+        })));
+      } else {
+        toast.error("Failed to load chats");
       }
       setLoading(false);
     }
@@ -101,8 +73,12 @@ export default function ChatsPage() {
 
   const deleteChat = async (chatId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    await supabase.from("messages").delete().eq("chat_id", chatId);
-    await supabase.from("chats").delete().eq("id", chatId);
+    try {
+      await api.chats.remove(chatId);
+    } catch {
+      toast.error("Failed to delete chat");
+      return;
+    }
     setChats(chats.filter((c) => c.id !== chatId));
     toast.success("Chat deleted");
   };

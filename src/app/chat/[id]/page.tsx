@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useMemo, useCallback, memo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -105,61 +105,43 @@ export default function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const saveMessageToDb = async (message: Message, currentChatId: string) => {
-    await supabase.from("messages").insert({
-      chat_id: currentChatId,
-      character_id: params.id as string,
-      persona_id: persona?.id || null,
-      role: message.role,
-      content: message.content,
-      thinking: message.thinking || null,
-    });
+    try {
+      await api.chats.addMessage(currentChatId, {
+        role: message.role,
+        content: message.content,
+        thinking: message.thinking || null,
+      });
+    } catch (error) {
+      console.error("Failed to save message:", error);
+    }
   };
 
-  const createOrGetChat = async (characterId: string, personaId: string | null): Promise<string> => {
+  const createOrGetChat = async (characterId: string, personaId: string | null, greeting: string): Promise<string> => {
     const existingChatId = searchParams.get("chat");
     if (existingChatId) {
       return existingChatId;
     }
 
-    const { data: existingChat } = await supabase
-      .from("chats")
-      .select("id")
-      .eq("character_id", characterId)
-      .eq("persona_id", personaId)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .single();
-
-    if (existingChat) {
-      return existingChat.id;
-    }
-
-    const { data: newChat } = await supabase
-      .from("chats")
-      .insert({
-        character_id: characterId,
-        persona_id: personaId,
-      })
-      .select("id")
-      .single();
-
-    return newChat?.id || crypto.randomUUID();
+    const chat = await api.chats.create({
+      character_id: characterId,
+      persona_id: personaId,
+      reuse_latest: true,
+      greeting,
+    });
+    return chat.id;
   };
 
   useEffect(() => {
     async function fetchSettings() {
       try {
-        const res = await fetch("/api/settings");
-        if (res.ok) {
-          const data = await res.json();
-          setSettings({
-            sfwSystemPrompt: data.sfwSystemPrompt || DEFAULT_SFW_SYSTEM_PROMPT,
-            nsfwSystemPrompt: data.nsfwSystemPrompt || DEFAULT_NSFW_SYSTEM_PROMPT,
-            maxTokens: data.maxTokens || 512,
-          });
-          if (data.models?.length > 0) {
-            setModels(data.models);
-          }
+        const data = await api.settings.get();
+        setSettings({
+          sfwSystemPrompt: data.sfwSystemPrompt || DEFAULT_SFW_SYSTEM_PROMPT,
+          nsfwSystemPrompt: data.nsfwSystemPrompt || DEFAULT_NSFW_SYSTEM_PROMPT,
+          maxTokens: data.maxTokens || 512,
+        });
+        if (data.models && data.models.length > 0) {
+          setModels(data.models);
         }
       } catch (error) {
         console.error("Failed to fetch settings:", error);
@@ -180,16 +162,15 @@ export default function ChatPage() {
     async function fetchData() {
       const charId = params.id as string;
 
-      const { data: charData } = await supabase
-        .from("characters")
-        .select("*")
-        .eq("id", charId)
-        .single();
-
-      const { data: allPersonaData } = await supabase
-        .from("personas")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const [charData, allPersonaData] = await Promise.all([
+        api.characters.get(charId).catch(() => null),
+        api.personas.list().catch(() => []),
+      ]);
+      if (!charData) {
+        toast.error("Character not found");
+        router.push("/");
+        return;
+      }
 
       let selectedPersona = null;
       if (allPersonaData && allPersonaData.length > 0) {
@@ -200,17 +181,13 @@ export default function ChatPage() {
 
       if (charData) setCharacter(charData);
 
-      const currentChatId = await createOrGetChat(charId, selectedPersona?.id || null);
+      const currentChatId = await createOrGetChat(charId, selectedPersona?.id || null, charData.greeting || "Hello!");
       setChatId(currentChatId);
 
-      const { data: savedMessages } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("chat_id", currentChatId)
-        .order("created_at", { ascending: true });
+      const savedMessages = await api.chats.messages(currentChatId);
 
-      if (savedMessages && savedMessages.length > 0) {
-        setMessages(savedMessages.map((m: any) => ({
+      if (savedMessages.length > 0) {
+        setMessages(savedMessages.map((m) => ({
           id: m.id,
           role: m.role,
           content: m.content,
@@ -225,12 +202,15 @@ export default function ChatPage() {
           created_at: new Date().toISOString(),
         };
         setMessages([greetingMessage]);
-        await saveMessageToDb(greetingMessage, currentChatId);
       }
 
       setLoading(false);
     }
-    fetchData();
+    fetchData().catch((error) => {
+      console.error("Failed to load chat:", error);
+      toast.error("Failed to load chat");
+      setLoading(false);
+    });
   }, [params.id, searchParams]);
 
   useEffect(() => {
@@ -302,21 +282,17 @@ export default function ChatPage() {
           image: m.image,
         }));
 
-        const response = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        const response = await api.chat({
             messages: recentMessages,
             model: selectedModel.id,
             maxTokens: settings.maxTokens,
-            systemPrompt: character?.tags?.includes("NSFW") ? settings.nsfwSystemPrompt : settings.sfwSystemPrompt,
+            systemPrompt: character?.content_rating === "nsfw" ? settings.nsfwSystemPrompt : settings.sfwSystemPrompt,
             characterName: character?.name,
             characterPersonality: character?.personality,
             characterScenario: character?.scenario,
             characterExampleDialogue: character?.example_dialogue,
             userPersona: persona ? `${persona.name}: ${persona.personality || ""}` : undefined,
             contextSummary: contextSummary || undefined,
-          }),
         });
 
         if (!response.ok) throw new Error("API request failed");
@@ -368,8 +344,6 @@ export default function ChatPage() {
           };
         setMessages((prev) => [...prev, aiMessage]);
         await saveMessageToDb(aiMessage, chatId);
-
-        await supabase.from("chats").update({ updated_at: new Date().toISOString() }).eq("id", chatId);
       } catch (error) {
         console.error("Chat error:", error);
         toast.error("Failed to get response. Please try again.");
@@ -388,16 +362,15 @@ export default function ChatPage() {
     };
 
   const startNewChat = async () => {
-    const { data: newChat } = await supabase
-      .from("chats")
-      .insert({
-        character_id: params.id as string,
-        persona_id: persona?.id || null,
-      })
-      .select("id")
-      .single();
+    const newChat = await api.chats.create({
+      character_id: params.id as string,
+      persona_id: persona?.id || null,
+      greeting: character?.greeting || "Hello!",
+    }).catch(() => null);
 
-    if (newChat) {
+    if (!newChat) {
+      toast.error("Failed to start a new chat");
+    } else {
       setChatId(newChat.id);
       const greetingMessage: Message = {
         id: "greeting",
@@ -406,15 +379,13 @@ export default function ChatPage() {
         created_at: new Date().toISOString(),
       };
       setMessages([greetingMessage]);
-      await saveMessageToDb(greetingMessage, newChat.id);
       toast.success("Started a new chat!");
     }
   };
 
   const deleteChat = async () => {
     if (chatId) {
-      await supabase.from("messages").delete().eq("chat_id", chatId);
-      await supabase.from("chats").delete().eq("id", chatId);
+      await api.chats.remove(chatId).catch(() => {});
     }
     setShowDeleteDialog(false);
     toast.success("Chat deleted!");

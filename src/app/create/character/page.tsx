@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -37,12 +37,8 @@ export default function CreateCharacter() {
 
   useEffect(() => {
     async function fetchTags() {
-      const { data } = await supabase
-        .from("tags")
-        .select("*")
-        .neq("type", "content_rating")
-        .order("type", { ascending: true });
-      if (data) setTags(data);
+      const data = await api.tags().catch(() => null);
+      if (data) setTags([...data].sort((a, b) => a.type.localeCompare(b.type)));
     }
     fetchTags();
   }, []);
@@ -58,27 +54,12 @@ export default function CreateCharacter() {
     setLoading(true);
 
     try {
-      const { data: character, error } = await supabase
-        .from("characters")
-        .insert([
-          {
-            ...formData,
-            content_rating: contentRating,
-            avatar_url: `https://images.unsplash.com/photo-1614728263952-84ea256f9679?q=80&w=400&h=400&auto=format&fit=crop`,
-          },
-        ])
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      if (selectedTags.length > 0 && character) {
-        const tagInserts = selectedTags.map((tagId) => ({
-          character_id: character.id,
-          tag_id: tagId,
-        }));
-        await supabase.from("character_tags").insert(tagInserts);
-      }
+      await api.characters.create({
+        ...formData,
+        content_rating: contentRating,
+        avatar_url: `https://images.unsplash.com/photo-1614728263952-84ea256f9679?q=80&w=400&h=400&auto=format&fit=crop`,
+        tag_ids: selectedTags,
+      });
 
       toast.success("Character created successfully!");
       router.push("/");

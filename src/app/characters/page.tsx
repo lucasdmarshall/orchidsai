@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -94,11 +94,7 @@ export default function CharactersPage() {
 
   useEffect(() => {
     async function fetchTags() {
-      const { data } = await supabase
-        .from("tags")
-        .select("*")
-        .neq("type", "content_rating")
-        .order("name");
+      const data = await api.tags().catch(() => null);
       if (data) setTags(data);
     }
     fetchTags();
@@ -111,45 +107,22 @@ export default function CharactersPage() {
       setLoadingMore(true);
     }
 
-    let query = supabase
-      .from("characters")
-      .select("*", { count: "exact" })
-      .order("created_at", { ascending: false })
-      .range(pageNum * ITEMS_PER_PAGE, (pageNum + 1) * ITEMS_PER_PAGE - 1);
-
-    if (contentFilter !== "all") {
-      query = query.eq("content_rating", contentFilter);
-    }
-
-    if (search) {
-      query = query.or(`name.ilike.%${search}%,title.ilike.%${search}%`);
-    }
-
-    const { data: chars, count } = await query;
-
-    if (chars) {
-      const { data: characterTags } = await supabase
-        .from("character_tags")
-        .select("character_id, tags(id, name, color, slug, type)")
-        .in("character_id", chars.map((c) => c.id));
-
-      const tagsByCharacter = new Map<string, Tag[]>();
-      characterTags?.forEach((ct: { character_id: string; tags: Tag }) => {
-        const existing = tagsByCharacter.get(ct.character_id) || [];
-        if (ct.tags) existing.push(ct.tags);
-        tagsByCharacter.set(ct.character_id, existing);
+    const result = await api.characters
+      .list({
+        page: pageNum,
+        limit: ITEMS_PER_PAGE,
+        rating: contentFilter === "all" ? undefined : contentFilter,
+        search,
+        tag: selectedTag,
+      })
+      .catch((error) => {
+        console.error("Failed to load characters:", error);
+        return null;
       });
 
-      let enrichedChars = chars.map((char) => ({
-        ...char,
-        tags: tagsByCharacter.get(char.id) || [],
-      }));
-
-      if (selectedTag) {
-        enrichedChars = enrichedChars.filter(char => 
-          char.tags?.some(t => t.slug === selectedTag)
-        );
-      }
+    if (result) {
+      const { items: chars, total: count } = result;
+      const enrichedChars = chars;
 
       if (reset) {
         setCharacters(enrichedChars);
@@ -195,10 +168,12 @@ export default function CharactersPage() {
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    await supabase.from("messages").delete().eq("character_id", deleteId);
-    await supabase.from("chats").delete().eq("character_id", deleteId);
-    await supabase.from("character_tags").delete().eq("character_id", deleteId);
-    await supabase.from("characters").delete().eq("id", deleteId);
+    try {
+      await api.characters.remove(deleteId);
+    } catch {
+      toast.error("Failed to delete character");
+      return;
+    }
     setCharacters(characters.filter((c) => c.id !== deleteId));
     setDeleteId(null);
     toast.success("Character deleted");
@@ -209,16 +184,15 @@ export default function CharactersPage() {
     if (!editCharacter) return;
     setEditLoading(true);
 
-    const { error } = await supabase
-      .from("characters")
-      .update({
+    const error = await api.characters
+      .update(editCharacter.id, {
         name: editCharacter.name,
         title: editCharacter.title,
         greeting: editCharacter.greeting,
         personality: editCharacter.personality,
         content_rating: editCharacter.content_rating || "sfw",
       })
-      .eq("id", editCharacter.id);
+      .then(() => null, (err) => err);
 
     if (error) {
       toast.error("Failed to update character");

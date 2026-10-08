@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -83,57 +83,51 @@ export default function ProfilePage() {
 
   async function fetchData() {
     const [personasRes, charactersRes] = await Promise.all([
-      supabase.from("personas").select("*").order("created_at", { ascending: false }),
-      supabase.from("characters").select("*").order("created_at", { ascending: false }),
+      api.personas.list().catch(() => null),
+      api.characters.list({ limit: 100 }).catch(() => null),
     ]);
-    if (personasRes.data) setPersonas(personasRes.data);
-    if (charactersRes.data) setCharacters(charactersRes.data);
+    if (personasRes) setPersonas(personasRes);
+    if (charactersRes) setCharacters(charactersRes.items);
     setLoading(false);
   }
 
   const setDefaultPersona = async (id: string) => {
-    await supabase.from("personas").update({ is_default: false }).neq("id", id);
-    await supabase.from("personas").update({ is_default: true }).eq("id", id);
+    await api.personas.setDefault(id, true);
     toast.success("Default persona updated!");
     fetchData();
   };
 
   const deletePersona = async (id: string) => {
-    await supabase.from("personas").delete().eq("id", id);
+    await api.personas.remove(id);
     toast.success("Persona deleted!");
     fetchData();
   };
 
   const updatePersona = async () => {
     if (!editingPersona) return;
-    await supabase
-      .from("personas")
-      .update({ name: personaForm.name, personality: personaForm.personality })
-      .eq("id", editingPersona.id);
+    await api.personas.update(editingPersona.id, { name: personaForm.name, personality: personaForm.personality });
     toast.success("Persona updated!");
     setEditingPersona(null);
     fetchData();
   };
 
   const deleteCharacter = async (id: string) => {
-    await supabase.from("characters").delete().eq("id", id);
+    await api.characters.remove(id);
     toast.success("Character deleted!");
     fetchData();
   };
 
   const updateCharacter = async () => {
     if (!editingCharacter) return;
-    await supabase
-      .from("characters")
-      .update({
+    await api.characters
+      .update(editingCharacter.id, {
         name: characterForm.name,
         title: characterForm.title,
         greeting: characterForm.greeting,
         personality: characterForm.personality,
         scenario: characterForm.scenario,
         example_dialogue: characterForm.example_dialogue,
-      })
-      .eq("id", editingCharacter.id);
+      });
     toast.success("Character updated!");
     setEditingCharacter(null);
     fetchData();

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,13 +42,7 @@ export default function PersonaPage() {
 
   const fetchPersonas = async () => {
     try {
-      const { data, error } = await supabase
-        .from("personas")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setPersonas(data || []);
+      setPersonas(await api.personas.list());
     } catch (error) {
       toast.error("Failed to load personas");
       console.error(error);
@@ -75,19 +69,10 @@ export default function PersonaPage() {
 
     try {
       if (editingPersona) {
-        const { error } = await supabase
-          .from("personas")
-          .update(formData)
-          .eq("id", editingPersona.id);
-
-        if (error) throw error;
+        await api.personas.update(editingPersona.id, formData);
         toast.success("Persona updated!");
       } else {
-        const { error } = await supabase
-          .from("personas")
-          .insert([formData]);
-
-        if (error) throw error;
+        await api.personas.create(formData);
         toast.success("Persona created!");
       }
 
@@ -105,12 +90,7 @@ export default function PersonaPage() {
     if (!confirm("Are you sure you want to delete this persona?")) return;
 
     try {
-      const { error } = await supabase
-        .from("personas")
-        .delete()
-        .eq("id", id);
-
-      if (error) throw error;
+      await api.personas.remove(id);
       toast.success("Persona deleted!");
       fetchPersonas();
     } catch (error) {
@@ -121,19 +101,7 @@ export default function PersonaPage() {
 
   const handleSetDefault = async (id: string, currentDefault: boolean) => {
     try {
-      if (!currentDefault) {
-        await supabase
-          .from("personas")
-          .update({ is_default: false })
-          .neq("id", id);
-      }
-
-      const { error } = await supabase
-        .from("personas")
-        .update({ is_default: !currentDefault })
-        .eq("id", id);
-
-      if (error) throw error;
+      await api.personas.setDefault(id, !currentDefault);
       toast.success(currentDefault ? "Default removed" : "Set as default!");
       fetchPersonas();
     } catch (error) {
