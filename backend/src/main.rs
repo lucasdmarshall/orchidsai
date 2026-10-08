@@ -1,5 +1,7 @@
 mod chat;
 mod error;
+mod import;
+mod keys;
 mod models;
 mod routes;
 
@@ -32,13 +34,33 @@ async fn main() -> anyhow::Result<()> {
     let db = PgPoolOptions::new().max_connections(10).connect(&database_url).await?;
     sqlx::migrate!("./migrations").run(&db).await?;
 
-    let keys = std::env::var("OPENROUTER_API_KEYS")
-        .or_else(|_| std::env::var("OPENROUTER_API_KEY"))
-        .unwrap_or_default();
-    let openrouter = Arc::new(chat::OpenRouter::new(&keys));
-    if openrouter.key_count() == 0 {
-        tracing::warn!("no OpenRouter API keys configured; /api/chat will fail until OPENROUTER_API_KEYS is set");
+    let args: Vec<String> = std::env::args().collect();
+    match args.get(1).map(String::as_str) {
+        Some("import-keys") if args.len() == 3 => return import::import_keys(&db, &args[2]).await,
+        Some("import-supabase") if args.len() == 4 => {
+            return import::import_supabase(&db, &args[2], &args[3]).await;
+        }
+        Some(_) => {
+            eprintln!("usage:\n  orchid-api                       run the server\n  orchid-api import-keys <file>    add OpenRouter keys from a CSV or text file\n  orchid-api import-supabase <url> <anon-key>");
+            std::process::exit(2);
+        }
+        None => {}
     }
+
+    // Keys in OPENROUTER_API_KEYS are added to the pool on startup.
+    let env_keys: Vec<String> = std::env::var("OPENROUTER_API_KEYS")
+        .or_else(|_| std::env::var("OPENROUTER_API_KEY"))
+        .unwrap_or_default()
+        .split(',')
+        .map(String::from)
+        .collect();
+    keys::KeyPool::add_keys(&db, &env_keys).await?;
+    let pool = keys::KeyPool::new(db.clone());
+    match pool.active_count().await? {
+        0 => tracing::warn!("no OpenRouter API keys in the pool; run `orchid-api import-keys <file>`"),
+        n => tracing::info!("{n} OpenRouter API keys in the pool"),
+    }
+    let openrouter = Arc::new(chat::OpenRouter::new(pool));
 
     let state = AppState { db, openrouter };
 

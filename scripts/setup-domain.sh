@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Puts the app behind nginx with free HTTPS (Let's Encrypt).
-#   orchidchat.magickamimosa.com -> Next.js app   (localhost:3000)
+#   orchidchat.magickamimosa.com -> Next.js app   (localhost:3000), /api -> Rust API
 #   orchidapi.magickamimosa.com  -> Rust API (localhost:8787)
 #
 # Usage (as root on the server, after the DNS A records point to it):
@@ -14,17 +14,9 @@ echo "==> Installing nginx and certbot"
 apt-get update -y
 apt-get install -y nginx certbot python3-certbot-nginx dnsutils
 
-write_site() {
-  local domain="$1" port="$2"
-  cat > "/etc/nginx/sites-available/$domain" <<NGINX
-server {
-    listen 80;
-    server_name $domain;
-
-    client_max_body_size 20m;
-
-    location / {
-        proxy_pass http://127.0.0.1:$port;
+proxy_block() {
+  cat <<NGINX
+        proxy_pass http://127.0.0.1:$1;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -35,14 +27,32 @@ server {
         # Chat replies are streamed; don't buffer them.
         proxy_buffering off;
         proxy_read_timeout 300s;
-    }
-}
 NGINX
+}
+
+# write_site <domain> <port> [api-port]: with api-port, /api goes to the Rust API.
+write_site() {
+  local domain="$1" port="$2" api_port="$3"
+  {
+    echo "server {"
+    echo "    listen 80;"
+    echo "    server_name $domain;"
+    echo "    client_max_body_size 20m;"
+    if [ -n "$api_port" ]; then
+      echo "    location /api/ {"
+      proxy_block "$api_port"
+      echo "    }"
+    fi
+    echo "    location / {"
+    proxy_block "$port"
+    echo "    }"
+    echo "}"
+  } > "/etc/nginx/sites-available/$domain"
   ln -sf "/etc/nginx/sites-available/$domain" "/etc/nginx/sites-enabled/$domain"
 }
 
 echo "==> Writing nginx config"
-write_site "$CHAT_DOMAIN" 3000
+write_site "$CHAT_DOMAIN" 3000 8787
 write_site "$API_DOMAIN" 8787
 rm -f /etc/nginx/sites-enabled/default
 nginx -t

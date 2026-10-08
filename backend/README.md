@@ -12,6 +12,27 @@ cargo run
 
 Then start the site from the repo root with `NEXT_PUBLIC_API_URL=http://localhost:8787 bun dev`.
 
+## OpenRouter keys
+
+Keys live in the `api_keys` table. Each chat request uses a random active key
+that no other request is using at the moment (and not the same one as the
+previous request). Rate-limited keys rest for a minute, keys out of credit for
+an hour, and keys OpenRouter rejects are switched off.
+
+```bash
+./target/release/orchid-api import-keys /root/openrouter-keys.csv   # CSV export or one key per line
+```
+
+Keys in `OPENROUTER_API_KEYS` are also added on startup.
+
+## Importing from Supabase
+
+```bash
+./target/release/orchid-api import-supabase https://<project>.supabase.co <anon-key>
+```
+
+Copies tags, characters, personas, chats and messages, keeping their ids. Safe to re-run.
+
 ## API
 
 | Method | Path | |

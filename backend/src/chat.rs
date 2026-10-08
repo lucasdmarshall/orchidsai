@@ -1,11 +1,9 @@
 //! POST /api/chat: builds the roleplay prompt, calls OpenRouter with streaming,
 //! and re-emits the reply as newline-delimited JSON:
 //! `{"content": "<delta>", "thinking": "<text>|null", "fullContent": "<reply so far, without <think>>"}`
+//! Each request uses a random key from the key pool (see keys.rs).
 
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    LazyLock,
-};
+use std::sync::{Arc, LazyLock};
 
 use axum::{
     body::{Body, Bytes},
@@ -20,7 +18,7 @@ use regex::Regex;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::{error::AppError, AppState};
+use crate::{error::AppError, keys::KeyPool, AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/api/chat", post(chat))
@@ -28,35 +26,23 @@ pub fn router() -> Router<AppState> {
 
 pub struct OpenRouter {
     url: String,
-    keys: Vec<String>,
-    next_key: AtomicUsize,
+    pub keys: Arc<KeyPool>,
     http: reqwest::Client,
 }
 
 impl OpenRouter {
-    pub fn new(keys: &str) -> Self {
+    pub fn new(keys: Arc<KeyPool>) -> Self {
         Self {
             url: std::env::var("OPENROUTER_URL")
                 .unwrap_or_else(|_| "https://openrouter.ai/api/v1/chat/completions".into()),
-            keys: keys.split(',').map(str::trim).filter(|k| !k.is_empty()).map(String::from).collect(),
-            next_key: AtomicUsize::new(0),
+            keys,
             http: reqwest::Client::new(),
         }
     }
-
-    pub fn key_count(&self) -> usize {
-        self.keys.len()
-    }
-
-    /// Round-robins over the configured keys to spread rate limits.
-    fn key(&self) -> Option<&str> {
-        if self.keys.is_empty() {
-            return None;
-        }
-        let i = self.next_key.fetch_add(1, Ordering::Relaxed) % self.keys.len();
-        Some(&self.keys[i])
-    }
 }
+
+/// How many different keys to try before giving up on a request.
+const MAX_KEY_ATTEMPTS: usize = 3;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,7 +71,7 @@ struct InMessage {
 }
 
 fn default_model() -> String {
-    "deepseek/deepseek-r1-0528:free".into()
+    "openrouter/free".into()
 }
 
 fn default_max_tokens() -> u32 {
@@ -148,9 +134,11 @@ fn build_system_prompt(req: &ChatRequest) -> String {
 }
 
 fn is_vision_model(model: &str) -> bool {
-    ["vision", "-vl", "gemini", "gpt-4o", "claude-3", "llama-4"]
-        .iter()
-        .any(|m| model.contains(m))
+    // openrouter/* routers pick a model that supports the request's inputs.
+    model.starts_with("openrouter/")
+        || ["vision", "-vl", "gemini", "gemma", "gpt-4o", "claude", "llama-4"]
+            .iter()
+            .any(|m| model.contains(m))
 }
 
 fn build_messages(req: &ChatRequest) -> Vec<Value> {
@@ -191,39 +179,60 @@ fn split_thinking(content: &str) -> (Option<String>, String) {
 }
 
 async fn chat(State(state): State<AppState>, Json(req): Json<ChatRequest>) -> Result<Response, AppError> {
-    let Some(key) = state.openrouter.key() else {
-        let error = json!({ "error": "OpenRouter API key is not configured on the server" });
-        return Ok((StatusCode::SERVICE_UNAVAILABLE, Json(error)).into_response());
-    };
-
     let body = json!({
         "model": req.model,
         "messages": build_messages(&req),
         "max_tokens": req.max_tokens,
         "stream": true,
     });
-    let upstream = state
-        .openrouter
-        .http
-        .post(&state.openrouter.url)
-        .bearer_auth(key)
-        .header("HTTP-Referer", "https://orchidchat.magickamimosa.com")
-        .header("X-Title", "Orchids AI Chat")
-        .json(&body)
-        .send()
-        .await?;
 
-    if !upstream.status().is_success() {
-        let status = StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    // Try a few different keys when one is rate-limited, out of credit or invalid.
+    let mut tried = Vec::new();
+    let (lease, upstream) = loop {
+        let Some(lease) = state.openrouter.keys.acquire(&tried).await? else {
+            let error = if tried.is_empty() {
+                "No OpenRouter API keys are available on the server"
+            } else {
+                "All OpenRouter keys are busy or rate-limited, please try again shortly"
+            };
+            return Ok((StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": error }))).into_response());
+        };
+        let upstream = state
+            .openrouter
+            .http
+            .post(&state.openrouter.url)
+            .bearer_auth(&lease.key)
+            .header("HTTP-Referer", "https://orchidchat.magickamimosa.com")
+            .header("X-Title", "Orchids AI Chat")
+            .json(&body)
+            .send()
+            .await?;
+
+        let status = upstream.status().as_u16();
+        if upstream.status().is_success() {
+            break (lease, upstream);
+        }
         let text = upstream.text().await.unwrap_or_default();
-        tracing::warn!(model = %req.model, %status, "OpenRouter error: {text}");
-        return Ok((status, Json(json!({ "error": "API request failed" }))).into_response());
-    }
+        tracing::warn!(model = %req.model, status, key = %lease.id, "OpenRouter error: {text}");
+        let key_problem = matches!(status, 401 | 402 | 403 | 429);
+        if key_problem {
+            let detail: String = text.chars().take(300).collect();
+            state.openrouter.keys.report_failure(lease.id, status, &detail).await?;
+        }
+        tried.push(lease.id);
+        if !key_problem || tried.len() >= MAX_KEY_ATTEMPTS {
+            let status = StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY);
+            return Ok((status, Json(json!({ "error": "AI request failed" }))).into_response());
+        }
+    };
 
     // SSE lines can be split across network chunks, so keep the unfinished tail.
+    // The lease lives in the stream so the key counts as busy until the reply ends.
     let mut buffer = String::new();
     let mut full = String::new();
+    let mut reasoning = String::new();
     let stream = upstream.bytes_stream().map(move |chunk| {
+        let _lease = &lease;
         let chunk = chunk?;
         buffer.push_str(&String::from_utf8_lossy(&chunk));
         let mut out = String::new();
@@ -234,11 +243,17 @@ async fn chat(State(state): State<AppState>, Json(req): Json<ChatRequest>) -> Re
                 continue;
             }
             let Ok(parsed) = serde_json::from_str::<Value>(data) else { continue };
-            let Some(delta) = parsed["choices"][0]["delta"]["content"].as_str().filter(|d| !d.is_empty()) else {
+            let delta_json = &parsed["choices"][0]["delta"];
+            let delta = delta_json["content"].as_str().unwrap_or("");
+            // Reasoning models send their thoughts separately from the reply.
+            let delta_reasoning = delta_json["reasoning"].as_str().unwrap_or("");
+            if delta.is_empty() && delta_reasoning.is_empty() {
                 continue;
-            };
+            }
             full.push_str(delta);
-            let (thinking, reply) = split_thinking(&full);
+            reasoning.push_str(delta_reasoning);
+            let (think_tags, reply) = split_thinking(&full);
+            let thinking = if reasoning.trim().is_empty() { think_tags } else { Some(reasoning.trim().to_string()) };
             out.push_str(&json!({ "content": delta, "thinking": thinking, "fullContent": reply }).to_string());
             out.push('\n');
         }

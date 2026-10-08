@@ -133,6 +133,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     async function fetchSettings() {
+      let available = DEFAULT_MODELS;
       try {
         const data = await api.settings.get();
         setSettings({
@@ -141,21 +142,22 @@ export default function ChatPage() {
           maxTokens: data.maxTokens || 512,
         });
         if (data.models && data.models.length > 0) {
+          available = data.models;
           setModels(data.models);
         }
       } catch (error) {
         console.error("Failed to fetch settings:", error);
       }
+
+      // Only restore the last-used model if it is still configured.
+      try {
+        const saved = JSON.parse(localStorage.getItem("orchids_selected_model") || "null");
+        setSelectedModel(available.find((m) => m.id === saved?.id) || available[0]);
+      } catch {
+        setSelectedModel(available[0]);
+      }
     }
     fetchSettings();
-
-    const savedModel = localStorage.getItem("orchids_selected_model");
-    if (savedModel) {
-      try {
-        const parsed = JSON.parse(savedModel);
-        setSelectedModel(parsed);
-      } catch { }
-    }
   }, []);
 
   useEffect(() => {

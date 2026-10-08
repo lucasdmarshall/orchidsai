@@ -132,6 +132,9 @@ export default function CharactersPage() {
 
       setTotalCount(count || 0);
       setHasMore(chars.length === ITEMS_PER_PAGE);
+    } else {
+      // Stop infinite scroll from retrying a failing request in a loop.
+      setHasMore(false);
     }
 
     setLoading(false);
@@ -149,11 +152,9 @@ export default function CharactersPage() {
     observerRef.current = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasMore && !loading && !loadingMore) {
-          setPage(prev => {
-            const newPage = prev + 1;
-            fetchCharacters(newPage, false);
-            return newPage;
-          });
+          const newPage = page + 1;
+          setPage(newPage);
+          fetchCharacters(newPage, false);
         }
       },
       { threshold: 0.1 }
@@ -164,7 +165,7 @@ export default function CharactersPage() {
     }
 
     return () => observerRef.current?.disconnect();
-  }, [hasMore, loading, loadingMore, fetchCharacters]);
+  }, [hasMore, loading, loadingMore, fetchCharacters, page]);
 
   const handleDelete = async () => {
     if (!deleteId) return;

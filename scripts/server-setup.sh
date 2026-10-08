@@ -79,8 +79,9 @@ fi
 # Older setups used port 8000, which can clash with other services.
 sed -i 's/^PORT=8000$/PORT=8787/' backend/.env
 
-# The site only needs to know where the API is (baked in at build time).
-echo "NEXT_PUBLIC_API_URL=$API_URL" > .env.local
+# nginx serves the API under /api on the site's own domain, so the site
+# calls it with relative URLs (an empty NEXT_PUBLIC_API_URL).
+echo "NEXT_PUBLIC_API_URL=" > .env.local
 
 echo "==> Installing auto-deploy script"
 cat > /usr/local/bin/orchids-autodeploy <<SCRIPT
@@ -112,6 +113,12 @@ chmod +x /usr/local/bin/orchids-autodeploy
 echo "==> First build (takes 5-15 minutes)"
 /usr/local/bin/orchids-autodeploy --force
 pm2 startup systemd -u root --hp "$HOME" >/dev/null 2>&1 || true
+
+# Copy your keys file to /root/openrouter-keys.csv to load it into the key pool.
+if [ -f /root/openrouter-keys.csv ]; then
+  echo "==> Importing OpenRouter keys"
+  (cd backend && ./target/release/orchid-api import-keys /root/openrouter-keys.csv)
+fi
 
 echo "==> Scheduling GitHub check every 2 minutes"
 CRON_LINE="*/2 * * * * flock -n /tmp/orchids-autodeploy.lock /usr/local/bin/orchids-autodeploy >> /var/log/orchids-autodeploy.log 2>&1"

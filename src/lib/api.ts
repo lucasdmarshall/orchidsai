@@ -1,8 +1,9 @@
-// Client for the Rust backend (backend/). Set NEXT_PUBLIC_API_URL to its
-// origin, e.g. https://orchidapi.magickamimosa.com
+// Client for the Rust backend (backend/). In production nginx serves it under
+// /api on the site's own domain; for local dev set NEXT_PUBLIC_API_URL to
+// http://localhost:8787.
 import type { ModelConfig } from "./constants";
 
-export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8787").replace(/\/$/, "");
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 
 export interface Tag {
   id: string;
