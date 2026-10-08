@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Puts the app behind nginx with free HTTPS (Let's Encrypt).
 #   orchidchat.magickamimosa.com -> Next.js app   (localhost:3000)
-#   orchidapi.magickamimosa.com  -> FastAPI server (localhost:8000)
+#   orchidapi.magickamimosa.com  -> Rust API (localhost:8000)
 #
 # Usage (as root on the server, after the DNS A records point to it):
 #   bash <(curl -fsSL https://raw.githubusercontent.com/lucasdmarshall/orchidsai/master/scripts/setup-domain.sh)
@@ -71,4 +71,4 @@ fi
 echo
 echo "All done."
 echo "  App: https://$CHAT_DOMAIN"
-echo "  API: https://$API_DOMAIN  (needs the FastAPI server running on port 8000)"
+echo "  API: https://$API_DOMAIN"
