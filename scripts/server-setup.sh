@@ -70,11 +70,14 @@ SQL
 DATABASE_URL=postgres://orchid:$DB_PASSWORD@localhost/orchid
 OPENROUTER_API_KEYS=$OPENROUTER_KEYS
 HOST=127.0.0.1
-PORT=8000
+PORT=8787
 CORS_ORIGINS=$CHAT_URL
 ENV
   chmod 600 backend/.env
 fi
+
+# Older setups used port 8000, which can clash with other services.
+sed -i 's/^PORT=8000$/PORT=8787/' backend/.env
 
 # The site only needs to know where the API is (baked in at build time).
 echo "NEXT_PUBLIC_API_URL=$API_URL" > .env.local
@@ -99,7 +102,8 @@ pm2 restart orchid-api 2>/dev/null \
 
 bun install --frozen-lockfile || bun install
 bun run build
-pm2 reload orchids-ai 2>/dev/null || pm2 start "bun run start" --name orchids-ai
+# npm (not bun) because pm2 may not have ~/.bun/bin on its PATH.
+pm2 reload orchids-ai 2>/dev/null || pm2 start npm --name orchids-ai --cwd "$APP_DIR" -- start
 pm2 save
 echo "[\$(date)] done"
 SCRIPT
@@ -115,7 +119,7 @@ CRON_LINE="*/2 * * * * flock -n /tmp/orchids-autodeploy.lock /usr/local/bin/orch
 
 sleep 3
 echo
-if curl -fsS http://127.0.0.1:8000/api/health >/dev/null; then echo "API:  OK"; else echo "API:  NOT RUNNING - see: pm2 logs orchid-api"; fi
+if curl -fsS http://127.0.0.1:8787/api/health >/dev/null; then echo "API:  OK"; else echo "API:  NOT RUNNING - see: pm2 logs orchid-api"; fi
 if curl -fsS -o /dev/null http://127.0.0.1:3000; then echo "Site: OK"; else echo "Site: NOT RUNNING - see: pm2 logs orchids-ai"; fi
 echo
 echo "Site: $CHAT_URL"

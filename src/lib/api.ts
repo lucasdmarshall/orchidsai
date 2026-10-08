@@ -2,7 +2,7 @@
 // origin, e.g. https://orchidapi.magickamimosa.com
 import type { ModelConfig } from "./constants";
 
-export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8787").replace(/\/$/, "");
 
 export interface Tag {
   id: string;

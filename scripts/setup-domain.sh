@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Puts the app behind nginx with free HTTPS (Let's Encrypt).
 #   orchidchat.magickamimosa.com -> Next.js app   (localhost:3000)
-#   orchidapi.magickamimosa.com  -> Rust API (localhost:8000)
+#   orchidapi.magickamimosa.com  -> Rust API (localhost:8787)
 #
 # Usage (as root on the server, after the DNS A records point to it):
 #   bash <(curl -fsSL https://raw.githubusercontent.com/lucasdmarshall/orchidsai/master/scripts/setup-domain.sh)
@@ -43,7 +43,7 @@ NGINX
 
 echo "==> Writing nginx config"
 write_site "$CHAT_DOMAIN" 3000
-write_site "$API_DOMAIN" 8000
+write_site "$API_DOMAIN" 8787
 rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl enable --now nginx

@@ -10,7 +10,7 @@ cp .env.example .env      # set DATABASE_URL and OPENROUTER_API_KEYS
 cargo run
 ```
 
-Then start the site from the repo root with `NEXT_PUBLIC_API_URL=http://localhost:8000 bun dev`.
+Then start the site from the repo root with `NEXT_PUBLIC_API_URL=http://localhost:8787 bun dev`.
 
 ## API
 

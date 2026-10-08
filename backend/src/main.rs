@@ -52,14 +52,16 @@ async fn main() -> anyhow::Result<()> {
         .layer(cors_layer())
         .layer(TraceLayer::new_for_http());
 
-    let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8000);
+    let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8787);
     let host: std::net::IpAddr = std::env::var("HOST")
         .ok()
         .and_then(|h| h.parse().ok())
         .unwrap_or([127, 0, 0, 1].into());
     let addr = SocketAddr::new(host, port);
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(|err| anyhow::anyhow!("cannot listen on {addr}: {err}"))?;
     tracing::info!("listening on http://{addr}");
-    let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
 }
