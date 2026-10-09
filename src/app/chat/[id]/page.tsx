@@ -47,7 +47,7 @@ import {
   Users
 } from "lucide-react";
 import { SceneMessage, parseScene } from "@/components/SceneMessage";
-import { DEFAULT_MODELS, ModelConfig, summarizeContext, DEFAULT_SFW_SYSTEM_PROMPT, DEFAULT_NSFW_SYSTEM_PROMPT } from "@/lib/openrouter";
+import { DEFAULT_MODELS, ModelConfig, DEFAULT_SFW_SYSTEM_PROMPT, DEFAULT_NSFW_SYSTEM_PROMPT } from "@/lib/openrouter";
 
 // Colors *actions* and "speech". Works on partial text while streaming: an
 // unclosed * or " styles everything after it until the closing mark arrives.
@@ -311,11 +311,6 @@ export default function ChatPage() {
         created_at: new Date().toISOString(),
       };
 
-      // Generate context summary from last 4 messages (before current message)
-      const contextSummary = messages.length >= 2 ? summarizeContext(
-        messages.slice(-4).map(m => ({ role: m.role, content: m.content }))
-      ) : "";
-
       scrollToBottom();
       setMessages((prev) => [...prev, userMessage]);
       setInput("");
@@ -327,15 +322,11 @@ export default function ChatPage() {
       await saveMessageToDb(userMessage, chatId);
 
       try {
-        // Build conversation history (last N messages for context window)
-        const recentMessages = [...messages, userMessage].slice(-10).map(m => ({
-          role: m.role,
-          content: m.content,
-          image: m.image,
-        }));
-
+        // The server loads the chat history and long-term memory by chat id.
         const response = await api.chat({
-            messages: recentMessages,
+            chatId,
+            userMessage: userMessage.content,
+            image: userMessage.image,
             model: selectedModel.id,
             maxTokens: settings.maxTokens,
             systemPrompt: character?.content_rating === "nsfw" ? settings.nsfwSystemPrompt : settings.sfwSystemPrompt,
@@ -344,7 +335,6 @@ export default function ChatPage() {
             characterScenario: character?.scenario,
             characterExampleDialogue: character?.example_dialogue,
             userPersona: persona ? `${persona.name}: ${persona.personality || ""}` : undefined,
-            contextSummary: contextSummary || undefined,
         });
 
         if (!response.ok) throw new Error("API request failed");

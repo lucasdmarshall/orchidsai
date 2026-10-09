@@ -2,6 +2,7 @@ mod chat;
 mod error;
 mod import;
 mod keys;
+mod memory;
 mod models;
 mod routes;
 

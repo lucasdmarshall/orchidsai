@@ -18,7 +18,12 @@ use regex::Regex;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::{error::AppError, keys::KeyPool, AppState};
+use crate::{
+    error::AppError,
+    keys::{KeyLease, KeyPool},
+    memory::{self, ChatContext},
+    AppState,
+};
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/api/chat", post(chat))
@@ -44,9 +49,61 @@ impl OpenRouter {
 /// How many different keys to try before giving up on a request.
 const MAX_KEY_ATTEMPTS: usize = 3;
 
+impl OpenRouter {
+    /// Sends a completion request with a key from the pool, retrying with
+    /// another key when one is rate-limited, out of credit or invalid.
+    /// The inner `Err` is a status and message to show the user.
+    pub async fn send(&self, body: &Value) -> anyhow::Result<Result<(KeyLease, reqwest::Response), (StatusCode, &'static str)>> {
+        let mut tried = Vec::new();
+        loop {
+            let Some(lease) = self.keys.acquire(&tried).await? else {
+                let error = if tried.is_empty() {
+                    "No OpenRouter API keys are available on the server"
+                } else {
+                    "All OpenRouter keys are busy or rate-limited, please try again shortly"
+                };
+                return Ok(Err((StatusCode::SERVICE_UNAVAILABLE, error)));
+            };
+            let upstream = self
+                .http
+                .post(&self.url)
+                .bearer_auth(&lease.key)
+                .header("HTTP-Referer", "https://orchidchat.magickamimosa.com")
+                .header("X-Title", "Orchids AI Chat")
+                .json(body)
+                .send()
+                .await?;
+
+            let status = upstream.status().as_u16();
+            if upstream.status().is_success() {
+                return Ok(Ok((lease, upstream)));
+            }
+            let text = upstream.text().await.unwrap_or_default();
+            tracing::warn!(model = %body["model"], status, key = %lease.id, "OpenRouter error: {text}");
+            let key_problem = matches!(status, 401 | 402 | 403 | 429);
+            if key_problem {
+                let detail: String = text.chars().take(300).collect();
+                self.keys.report_failure(lease.id, status, &detail).await?;
+            }
+            tried.push(lease.id);
+            if !key_problem || tried.len() >= MAX_KEY_ATTEMPTS {
+                let status = StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY);
+                return Ok(Err((status, "AI request failed")));
+            }
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ChatRequest {
+    /// With a chat id the server loads the history and memory itself;
+    /// `messages` is only used without one.
+    chat_id: Option<uuid::Uuid>,
+    /// The message being sent now, in case saving it failed.
+    user_message: Option<String>,
+    /// Image attached to the message being sent now.
+    image: Option<String>,
     #[serde(default)]
     messages: Vec<InMessage>,
     #[serde(default = "default_model")]
@@ -112,7 +169,7 @@ fn replace_placeholders(text: &str, char_name: &str, user_name: &str) -> String 
     USER.replace_all(&text, regex::NoExpand(user_name)).into_owned()
 }
 
-fn build_system_prompt(req: &ChatRequest) -> String {
+fn names(req: &ChatRequest) -> (&str, &str) {
     let user_name = req
         .user_persona
         .as_deref()
@@ -121,6 +178,11 @@ fn build_system_prompt(req: &ChatRequest) -> String {
         .filter(|n| !n.is_empty())
         .unwrap_or("User");
     let char_name = req.character_name.as_deref().filter(|n| !n.is_empty()).unwrap_or("Character");
+    (char_name, user_name)
+}
+
+fn build_system_prompt(req: &ChatRequest, memory: Option<&ChatContext>) -> String {
+    let (char_name, user_name) = names(req);
     let fill = |text: &Option<String>| replace_placeholders(text.as_deref().unwrap_or(""), char_name, user_name);
 
     let base = req.system_prompt.as_deref().filter(|p| !p.is_empty()).unwrap_or(FALLBACK_SYSTEM_PROMPT);
@@ -154,6 +216,21 @@ fn build_system_prompt(req: &ChatRequest) -> String {
             "\n\n### RECENT CONTEXT (last 4 exchanges):\n{context}\n(Continue from this context naturally. Don't repeat what was said.)"
         ));
     }
+    if let Some(memory) = memory {
+        if let Some(summary) = memory.summary.as_deref().filter(|s| !s.trim().is_empty()) {
+            prompt.push_str(&format!(
+                "\n\n### STORY MEMORY (what happened earlier in this chat):\n{}\n(Stay consistent with this. Don't retell it.)",
+                summary.trim()
+            ));
+        }
+        if !memory.recent_cast.is_empty() {
+            prompt.push_str(&format!(
+                "\n\n### CHARACTERS IN RECENT SCENES:\n{}\n(Keep using exactly these names for these people.)",
+                memory.recent_cast.join(", ")
+            ));
+        }
+    }
+
     prompt.push_str("\n\n");
     prompt.push_str(&replace_placeholders(OUTPUT_FORMAT, char_name, user_name));
     prompt
@@ -167,9 +244,9 @@ fn is_vision_model(model: &str) -> bool {
             .any(|m| model.contains(m))
 }
 
-fn build_messages(req: &ChatRequest) -> Vec<Value> {
+fn build_messages(req: &ChatRequest, memory: Option<&ChatContext>) -> Vec<Value> {
     let vision = is_vision_model(&req.model);
-    let mut out = vec![json!({ "role": "system", "content": build_system_prompt(req) })];
+    let mut out = vec![json!({ "role": "system", "content": build_system_prompt(req, memory) })];
     for msg in &req.messages {
         let role = if msg.role == "assistant" { "assistant" } else { "user" };
         let content = match msg.image.as_deref().filter(|i| !i.is_empty()) {
@@ -190,7 +267,7 @@ fn build_messages(req: &ChatRequest) -> Vec<Value> {
 
 /// Splits `<think>…</think>` reasoning out of the reply, including a think
 /// block that is still open while streaming.
-fn split_thinking(content: &str) -> (Option<String>, String) {
+pub fn split_thinking(content: &str) -> (Option<String>, String) {
     static THINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<think>(.*?)</think>").unwrap());
     if let Some(caps) = THINK.captures(content) {
         let thinking = caps[1].trim().to_string();
@@ -204,53 +281,47 @@ fn split_thinking(content: &str) -> (Option<String>, String) {
     (None, content.to_string())
 }
 
-async fn chat(State(state): State<AppState>, Json(req): Json<ChatRequest>) -> Result<Response, AppError> {
+async fn chat(State(state): State<AppState>, Json(mut req): Json<ChatRequest>) -> Result<Response, AppError> {
+    let memory = match req.chat_id {
+        Some(chat_id) => {
+            let ctx = memory::load(&state.db, chat_id, memory::history_budget()).await?;
+            req.messages = ctx
+                .history
+                .iter()
+                .map(|m| InMessage { role: m.role.clone(), content: m.content.clone(), image: None })
+                .collect();
+            // Make sure the message being sent is last, even if saving it failed.
+            if let Some(text) = req.user_message.clone().filter(|t| !t.trim().is_empty()) {
+                let saved = req.messages.last().is_some_and(|m| m.role == "user" && m.content == text);
+                if !saved {
+                    req.messages.push(InMessage { role: "user".into(), content: text, image: None });
+                }
+            }
+            if let Some(last) = req.messages.last_mut().filter(|m| m.role == "user") {
+                last.image = req.image.take();
+            }
+            Some((chat_id, ctx))
+        }
+        None => None,
+    };
+
     let body = json!({
         "model": req.model,
-        "messages": build_messages(&req),
+        "messages": build_messages(&req, memory.as_ref().map(|(_, ctx)| ctx)),
         "max_tokens": req.max_tokens,
         "stream": true,
     });
 
-    // Try a few different keys when one is rate-limited, out of credit or invalid.
-    let mut tried = Vec::new();
-    let (lease, upstream) = loop {
-        let Some(lease) = state.openrouter.keys.acquire(&tried).await? else {
-            let error = if tried.is_empty() {
-                "No OpenRouter API keys are available on the server"
-            } else {
-                "All OpenRouter keys are busy or rate-limited, please try again shortly"
-            };
-            return Ok((StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": error }))).into_response());
-        };
-        let upstream = state
-            .openrouter
-            .http
-            .post(&state.openrouter.url)
-            .bearer_auth(&lease.key)
-            .header("HTTP-Referer", "https://orchidchat.magickamimosa.com")
-            .header("X-Title", "Orchids AI Chat")
-            .json(&body)
-            .send()
-            .await?;
-
-        let status = upstream.status().as_u16();
-        if upstream.status().is_success() {
-            break (lease, upstream);
-        }
-        let text = upstream.text().await.unwrap_or_default();
-        tracing::warn!(model = %req.model, status, key = %lease.id, "OpenRouter error: {text}");
-        let key_problem = matches!(status, 401 | 402 | 403 | 429);
-        if key_problem {
-            let detail: String = text.chars().take(300).collect();
-            state.openrouter.keys.report_failure(lease.id, status, &detail).await?;
-        }
-        tried.push(lease.id);
-        if !key_problem || tried.len() >= MAX_KEY_ATTEMPTS {
-            let status = StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY);
-            return Ok((status, Json(json!({ "error": "AI request failed" }))).into_response());
-        }
+    let (lease, upstream) = match state.openrouter.send(&body).await? {
+        Ok(ok) => ok,
+        Err((status, error)) => return Ok((status, Json(json!({ "error": error }))).into_response()),
     };
+
+    // The chat outgrew the history budget: fold the oldest messages into memory.
+    if let Some((chat_id, ctx)) = &memory {
+        let (char_name, user_name) = names(&req);
+        memory::spawn_fold(state.clone(), *chat_id, ctx, req.model.clone(), char_name.to_string(), user_name.to_string());
+    }
 
     // SSE lines can be split across network chunks, so keep the unfinished tail.
     // The lease lives in the stream so the key counts as busy until the reply ends.

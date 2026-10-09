@@ -25,6 +25,16 @@ an hour, and keys OpenRouter rejects are switched off.
 
 Keys in `OPENROUTER_API_KEYS` are also added on startup.
 
+## Chat context and memory
+
+For each message the API builds the context itself from the database
+(`src/memory.rs`): the chat's memory summary, the speakers of recent scenes
+(at most 12), and as many recent messages as fit in `HISTORY_TOKEN_BUDGET`
+(default 12000). When a chat outgrows the budget, the oldest messages are
+folded into the summary by one background AI call, keeping 60% of the budget
+as verbatim history so this only happens every few turns. The summary is
+capped at ~350 words and its cast list drops characters who no longer matter.
+
 ## Importing from Supabase
 
 ```bash
